@@ -21,8 +21,8 @@ deterministic re-validation (everything).
 
 | Choice | Reason |
 |---|---|
-| Express + TypeScript (ESM) | The framework I run in production and can defend line by line. Lette uses NestJS internally; I chose depth in my own tooling over surface familiarity with someone else's, and kept a clean route/service/lib separation so the shape translates. |
-| Prisma + SQLite | Prisma because it is a good fit for a schema this size (and Lette's ORM). SQLite so reviewers can `npm i && npm run dev` with zero external services. The capacity section below covers what changes on Postgres. |
+| Express + TypeScript (ESM) | The framework I run in production day to day. Rather than present first-week NestJS, I used the tool I know deeply and kept a clean route/service/lib separation, so the structure maps naturally onto Nest's modules and providers. |
+| Prisma + SQLite | Prisma is a good fit for a schema this size. SQLite keeps setup to `npm i && npm run dev` — no external services to install. The capacity section below covers what changes on Postgres. |
 | Anthropic SDK, `claude-haiku-4-5` by default | The brief says integration pattern > model size. Model is env-configurable (`ANTHROPIC_MODEL`). |
 | Vite + React + TS | Two views do not justify a heavier framework. Plain fetch + hooks; no state library. |
 | Vitest + supertest + React Testing Library | LLM is fully mocked in tests — the suite runs with **no API key**. |
