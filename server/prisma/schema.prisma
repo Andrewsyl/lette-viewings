@@ -1,0 +1,72 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Property {
+  id      String        @id @default(cuid())
+  name    String
+  address String
+  slots   ViewingSlot[]
+}
+
+model AdminUser {
+  id    String @id @default(cuid())
+  name  String
+  email String @unique
+}
+
+model Lead {
+  id          String       @id @default(cuid())
+  name        String
+  email       String       @unique
+  notes       String?
+  invitations Invitation[]
+}
+
+model ViewingSlot {
+  id           String       @id @default(cuid())
+  property     Property     @relation(fields: [propertyId], references: [id])
+  propertyId   String
+  startsAt     DateTime
+  durationMins Int
+  maxAttendees Int
+  invitations  Invitation[]
+
+  @@index([propertyId, startsAt])
+}
+
+// Status is a string, not an enum: SQLite has no native enums and Prisma disallows
+// `enum` on this provider. The Zod layer enforces the value set at the boundary.
+model Invitation {
+  id         String      @id @default(cuid())
+  slot       ViewingSlot @relation(fields: [slotId], references: [id])
+  slotId     String
+  lead       Lead        @relation(fields: [leadId], references: [id])
+  leadId     String
+  status     String      @default("PENDING") // PENDING | ACCEPTED | DECLINED
+  message    String?
+  approvedAt DateTime?
+  createdAt  DateTime    @default(now())
+
+  @@unique([slotId, leadId])
+  @@index([slotId, status])
+}
+
+// Every LLM call is auditable: when someone asks "why did it propose that slot?",
+// the answer is a query, not an archaeology project.
+model LlmCallLog {
+  id        String   @id @default(cuid())
+  kind      String // "parse_slots" | "draft_invitations"
+  model     String
+  input     String
+  rawOutput String?
+  parsedOk  Boolean
+  error     String?
+  latencyMs Int
+  createdAt DateTime @default(now())
+}

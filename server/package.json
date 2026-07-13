@@ -1,0 +1,32 @@
+{
+  "name": "@lette/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "db:setup": "prisma db push && tsx prisma/seed.ts",
+    "db:reset": "rm -f prisma/dev.db && npm run db:setup",
+    "test": "DATABASE_URL=file:./test.db prisma db push --force-reset --skip-generate && DATABASE_URL=file:./test.db vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@lette/shared": "*",
+    "@prisma/client": "^6.2.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
+    "@types/supertest": "^6.0.2",
+    "prisma": "^6.2.0",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
