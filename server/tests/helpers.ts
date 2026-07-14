@@ -1,14 +1,19 @@
 import { prisma } from "../src/lib/db.js";
-import type { LlmClient, ToolCallRequest, ToolCallResult } from "../src/lib/llm.js";
+import type { LlmClient, StreamTextRequest, ToolCallRequest, ToolCallResult } from "../src/lib/llm.js";
 
 /** Mock LLM: returns queued canned outputs (including deliberately malformed ones)
- *  and records every request so tests can assert on repair-retry behaviour. */
+ *  and records every request so tests can assert on repair-retry behaviour.
+ *  `textOutputs` feeds streamText — each entry is streamed in two chunks; an entry of
+ *  Error makes that stream fail. */
 export class MockLlm implements LlmClient {
   requests: ToolCallRequest[] = [];
+  streamRequests: StreamTextRequest[] = [];
   private queue: unknown[];
+  private textQueue: (string | Error)[];
 
-  constructor(outputs: unknown[]) {
+  constructor(outputs: unknown[], textOutputs: (string | Error)[] = []) {
     this.queue = [...outputs];
+    this.textQueue = [...textOutputs];
   }
 
   async invokeTool(req: ToolCallRequest): Promise<ToolCallResult> {
@@ -16,6 +21,17 @@ export class MockLlm implements LlmClient {
     if (this.queue.length === 0) throw new Error("MockLlm: no more queued outputs");
     const input = this.queue.shift();
     return { input, raw: JSON.stringify(input) };
+  }
+
+  async streamText(req: StreamTextRequest, onDelta: (text: string) => void): Promise<string> {
+    this.streamRequests.push(req);
+    if (this.textQueue.length === 0) throw new Error("MockLlm: no more queued text outputs");
+    const next = this.textQueue.shift()!;
+    if (next instanceof Error) throw next;
+    const mid = Math.ceil(next.length / 2);
+    onDelta(next.slice(0, mid));
+    onDelta(next.slice(mid));
+    return next;
   }
 }
 

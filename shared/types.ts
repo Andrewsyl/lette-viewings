@@ -37,6 +37,9 @@ export interface SlotProposal {
   inviteeLeadIds: string[];
   /** Questions the admin must answer when the input was ambiguous. Non-empty ⇒ nothing should be created yet. */
   clarifications: string[];
+  /** Machine-usable typo fixes accompanying a "did you mean…?" clarification — the UI
+   *  renders each as a one-tap correction that rewrites the request and re-parses. */
+  corrections?: { from: string; to: string }[];
 }
 
 export interface ParseResponse {
@@ -118,6 +121,14 @@ export interface SlotFullResponse {
   full: true;
   alternatives: SlotWithCounts[];
 }
+
+/** Server-sent events emitted by POST /api/invitations/draft/stream */
+export type DraftStreamEvent =
+  | { type: "start"; leadId: string }
+  | { type: "delta"; leadId: string; text: string }
+  | { type: "done"; leadId: string; message: string }
+  | { type: "error"; leadId: string; message: string }
+  | { type: "complete" };
 
 export interface ApiError {
   message: string;

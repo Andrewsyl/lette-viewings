@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/db.js";
 import { draftInvitationMessages } from "../lib/draftMessages.js";
+import { streamDraftMessages } from "../lib/draftStream.js";
 import { acceptInvitation, acceptAlternative } from "../lib/capacity.js";
 import { NotFoundError } from "../lib/errors.js";
 import type { DraftResponse, InvitationView, SlotFullResponse } from "@lette/shared";
@@ -20,6 +21,31 @@ router.post("/draft", async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// Streaming variant: server-sent events, one plain-text streamed model call per lead.
+// Errors after headers are sent can't become HTTP status codes — they become error
+// events, and the client falls back or lets the admin write manually.
+router.post("/draft/stream", async (req, res, next) => {
+  let body: z.infer<typeof draftBody>;
+  try {
+    body = draftBody.parse(req.body);
+  } catch (err) {
+    return next(err);
+  }
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders?.();
+  try {
+    await streamDraftMessages(body, (event) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Drafting failed";
+    res.write(`data: ${JSON.stringify({ type: "complete", fatal: message })}\n\n`);
+  }
+  res.end();
 });
 
 const approveBody = z.object({ message: z.string().min(10).max(3000) });

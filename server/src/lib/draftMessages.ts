@@ -54,9 +54,8 @@ export interface DraftInput {
   leadIds: string[];
 }
 
-export async function draftInvitationMessages(input: DraftInput, llm?: LlmClient) {
-  const client = llm ?? getLlmClient();
-
+/** Slot + leads + a human-readable time, shared by batch drafting and streaming. */
+export async function loadDraftContext(input: DraftInput) {
   const slot = await prisma.viewingSlot.findUnique({
     where: { id: input.slotId },
     include: { property: true },
@@ -73,6 +72,12 @@ export async function draftInvitationMessages(input: DraftInput, llm?: LlmClient
     hour: "2-digit",
     minute: "2-digit",
   });
+  return { slot, leads, when };
+}
+
+export async function draftInvitationMessages(input: DraftInput, llm?: LlmClient) {
+  const client = llm ?? getLlmClient();
+  const { slot, leads, when } = await loadDraftContext(input);
 
   const system = [
     "You draft short, warm, professional viewing invitation messages for a lettings team.",

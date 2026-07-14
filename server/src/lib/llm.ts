@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { env, hasLlmKey } from "../env.js";
 import { LlmUnavailableError } from "./errors.js";
+import { DemoLlmClient } from "./demoLlm.js";
 
 // The seam that makes everything testable: routes and services depend on this interface,
 // never on the Anthropic SDK directly. Tests inject a mock that returns canned output —
@@ -28,8 +29,18 @@ export interface ToolCallResult {
   raw: string;
 }
 
+export interface StreamTextRequest {
+  system: string;
+  user: string;
+  maxTokens?: number;
+}
+
 export interface LlmClient {
   invokeTool(req: ToolCallRequest): Promise<ToolCallResult>;
+  /** Stream free-form text, invoking onDelta per chunk; resolves with the full text.
+   *  Used where the output is prose bound for human review (drafts) — structured
+   *  data always goes through invokeTool's schema instead. */
+  streamText(req: StreamTextRequest, onDelta: (text: string) => void): Promise<string>;
 }
 
 class AnthropicLlmClient implements LlmClient {
@@ -65,6 +76,21 @@ class AnthropicLlmClient implements LlmClient {
     }
     return { input: toolBlock.input, raw: JSON.stringify(toolBlock.input) };
   }
+
+  async streamText(req: StreamTextRequest, onDelta: (text: string) => void): Promise<string> {
+    const stream = this.client.messages.stream({
+      model: env.ANTHROPIC_MODEL,
+      max_tokens: req.maxTokens ?? 1024,
+      system: req.system,
+      messages: [{ role: "user", content: req.user }],
+    });
+    stream.on("text", onDelta);
+    const final = await stream.finalMessage();
+    return final.content
+      .filter((block) => block.type === "text")
+      .map((block) => (block as { type: "text"; text: string }).text)
+      .join("");
+  }
 }
 
 let overrideClient: LlmClient | null = null;
@@ -76,6 +102,7 @@ export function setLlmClient(client: LlmClient | null) {
 
 export function getLlmClient(): LlmClient {
   if (overrideClient) return overrideClient;
+  if (env.LLM_MODE === "mock") return new DemoLlmClient();
   if (!hasLlmKey) throw new LlmUnavailableError();
   return new AnthropicLlmClient(env.ANTHROPIC_API_KEY!);
 }
