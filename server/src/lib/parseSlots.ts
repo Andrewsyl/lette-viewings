@@ -42,6 +42,19 @@ const TOOL: ToolSpec = {
           "Questions for the admin when the request is ambiguous (vague dates, unknown people, missing counts). " +
           "If non-empty, slots/invitees may be partial or empty — the admin will answer and retry.",
       },
+      corrections: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            from: { type: "string", description: "The exact text from the request that looks like a typo" },
+            to: { type: "string", description: "The lead's real name it should be replaced with" },
+          },
+          required: ["from", "to"],
+        },
+        description:
+          "When a clarification is a 'Did you mean…?' typo suggestion, also provide the machine-usable fix here.",
+      },
     },
     required: ["slots", "inviteeLeadIds", "clarifications"],
   },
@@ -69,6 +82,11 @@ function buildProposalSchema(validPropertyIds: Set<string>, validLeadIds: Set<st
       z.string().refine((id) => validLeadIds.has(id), { message: "leadId is not in the provided lead list" })
     ),
     clarifications: z.array(z.string().min(1)).max(5),
+    corrections: z
+      .array(z.object({ from: z.string().min(1), to: z.string().min(1) }))
+      .max(5)
+      .optional()
+      .default([]),
   });
 }
 
@@ -89,6 +107,10 @@ function buildSystemPrompt(
     "",
     "Rules:",
     "- Never invent property or lead ids. If the request names someone not in the list, add a clarification.",
+    "- A misspelled name that clearly matches exactly ONE lead: use that lead's id (the admin confirms in the preview).",
+    "- A name that could match multiple leads, or none closely: ask via clarifications ('Did you mean <full name>?')" +
+      " AND emit the machine-usable fix in `corrections` ({from: the typed text, to: the lead's full name}).",
+    "- Never silently drop a person the request asked to invite — an unmatched person is always a clarification.",
     "- If a date/time is vague (e.g. 'sometime next week'), ask via clarifications rather than guessing.",
     "- 'afternoon' means slots between 13:00 and 17:00; 'morning' 09:00–12:00; 'evening' 17:00–20:00.",
     "- Multiple slots in one afternoon should be consecutive unless told otherwise.",
