@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "db:setup": "prisma db push && tsx prisma/seed.ts",
+    "db:setup": "DATABASE_URL=\"${DATABASE_URL:-file:./dev.db}\" prisma db push && tsx prisma/seed.ts",
     "db:reset": "rm -f prisma/dev.db && npm run db:setup",
-    "test": "DATABASE_URL=file:./test.db prisma db push --force-reset --skip-generate && DATABASE_URL=file:./test.db vitest run",
+    "test": "DATABASE_URL=file:./test.db prisma db push --force-reset --skip-generate && DATABASE_URL=file:./test.db LLM_MODE=live ANTHROPIC_API_KEY= vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

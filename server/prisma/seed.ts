@@ -1,6 +1,4 @@
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prisma } from "../src/lib/db.js";
 
 // Seed data uses the brief's own example entities (22 Maple Street, the Johnson and
 // Patel leads) so the example prompt from the challenge works verbatim on first run.
