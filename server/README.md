@@ -10,7 +10,7 @@ npm run dev            # starts API (:4100) and web (:5173) together
 # or server-only, from this directory:
 npm run db:setup       # prisma db push + seed (SQLite file at prisma/dev.db)
 npm run dev            # tsx watch, http://localhost:4100
-npm test               # 26 tests — no API key needed (LLM mocked)
+npm test               # full suite — no API key needed (LLM mocked)
 npm run typecheck
 ```
 
@@ -32,7 +32,7 @@ Copy `.env.example` to `.env` for live LLM features. Everything else works with 
 | Method & path | Purpose |
 |---|---|
 | `POST /api/nl/parse` | NL → structured slot proposal (preview only, persists nothing) |
-| `POST /api/slots/confirm` | Create the admin-approved slots + pending invitations |
+| `POST /api/slots/confirm` | Apply the admin-approved plan: create slots + invitations, cancel or move existing viewings |
 | `GET /api/slots` | List slots with accepted counts |
 | `POST /api/invitations/draft` | AI-draft personalised messages for review |
 | `POST /api/invitations/:id/approve` | Save edited message, mark "sent" (simulated) |
@@ -40,6 +40,7 @@ Copy `.env.example` to `.env` for live LLM features. Everything else works with 
 | `POST /api/invitations/:id/accept` | Accept — 200 with spots remaining, or 409 + alternative slots |
 | `POST /api/invitations/:id/accept-alternative` | Move to a suggested alternative (same capacity guard) |
 | `GET /api/leads` | Lead roster |
+| `GET /api/me` | The stubbed admin session (so the UI can greet the admin by name) |
 
 Errors: Zod → 422 · LLM output invalid after one repair retry → 422 (friendly message) ·
 LLM unavailable → 502 · slot full → 409 with alternatives · unknown id → 404.

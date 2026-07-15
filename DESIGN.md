@@ -42,9 +42,28 @@ model returned something that *looks* right." Every layer here exists to catch t
 3. **One repair retry.** On validation failure the errors are fed back to the model verbatim
    ("your output failed these checks — return a corrected call"). One retry only; a second
    failure returns a friendly 422. Retries are logged, so cost and failure rates are visible.
-4. **Ambiguity is a first-class output.** The proposal schema includes `clarifications[]`.
-   "Sometime next week" produces a question for the admin, not a guess. The model is
-   explicitly instructed that guessing is worse than asking.
+4. **Ambiguity is a first-class output.** The proposal schema includes `clarifications[]` —
+   structured questions, each optionally carrying 2–6 `options` so the UI can offer one-tap
+   answers (with `multiple: true` marking pick-several questions like "who should I
+   invite?", whose chips toggle and submit together). The prompt requires one question per
+   turn, most blocking first, and grounds a two-week weekday↔date calendar because models
+   are unreliable at date arithmetic. "Sometime next week" produces a question for the admin, not a guess; the answer
+   is appended to the request text and re-parsed, so the conversation state IS the text and
+   the endpoint stays a stateless single call. The model is explicitly instructed that
+   guessing is worse than asking. Judgement calls that *don't* warrant a question (defaults
+   applied, "afternoon" resolved to a start time) are returned in `assumptions[]` and shown
+   beside the preview — the admin checks the AI's reading instead of trusting it blind.
+   Double-booking is handled the same two-layer way: the prompt grounds what's already
+   booked so the model can schedule around it, but the guarantee is a deterministic clash
+   repair after validation — interval arithmetic is not a job for a language model. The
+   model extracts a `window` (the start–end range the admin's words allow: "afternoon" →
+   13:00–17:00); the repair moves clashing slots to free times INSIDE that window and
+   speaks the move in the AI's assumptions (the preview is the human gate, so the admin
+   sees the new times and can push back). Going outside the window is never a repair —
+   it's a different offer, so it becomes the trade-off question: "fully booked within the
+   time you asked for — nearest free times are 6:00pm and 6:30pm that day. Take one, or
+   try another day?" Constraint extraction is the model's job, constraint satisfaction is
+   code's, and relaxing a constraint belongs to the human.
 5. **Grounding.** The system prompt carries today's date (Europe/Dublin), the property list,
    and the lead roster (ids, names, notes). The model selects from supplied ids only —
    it never invents entities.

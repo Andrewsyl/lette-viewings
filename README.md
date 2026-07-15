@@ -26,16 +26,41 @@ is visibly labelled as demo output so it can't be mistaken for the real model.
 ## Try it
 
 1. Open http://localhost:5173/admin
-2. Use the example prompt (or type your own): *"Set up three 30-minute viewing slots for
+2. Use the example prompt (or type your own): *"Set up three 30-minute viewings for
    22 Maple Street next Tuesday afternoon, max 5 people each, and invite the Johnson and
-   Patel leads"*
+   Patel leads"* — existing viewings can be managed the same way: *"cancel Tuesday's
+   viewings at Maple Street"*, *"move the 5pm viewing to 7pm"* (bulk NL operations, one
+   of the brief's bonus items; cancels and moves go through the same preview → confirm
+   gate as creations)
 3. Review the parsed preview → **Confirm & create**
 4. **Draft invitations with AI** — messages stream in live, personalised from each lead's
    notes (Sarah asked about parking; Priya works evenings) — edit freely → **Approve & send**
 5. Open a sent invitation's link to see the invitee view → **Accept**
 6. To see the full-slot flow: create a slot with `max 1`, invite two leads, accept as
    both — the second gets alternative times instead of a dead end. Try *"some viewings
-   next week sometime"* to see ambiguity handled with a question instead of a guess.
+   next week sometime"* to see ambiguity handled with a question instead of a guess —
+   answerable with one tap on an option chip or a typed reply, no retyping the request.
+
+## Product decisions
+
+A few deliberate calls a reviewer might otherwise read as omissions:
+
+- **"Conversational" = a light thread over a stateless parse, not a chat app.** The
+  exchange builds visibly — the admin's request, the AI's clarifying questions, one-tap or
+  typed answers — and the AI's closing turn answers with the actual plan ("Got it — three
+  viewings at 22 Maple Street on Tuesday 21 July, inviting Sarah and Priya"). But the
+  brief's required components (structured preview/confirm, review panel) stay full
+  sections, never chat bubbles buried in scrollback, and there is no conversation state
+  underneath: every answer is appended to one request string and re-parsed as a stateless
+  single call, so the server sees exactly what the thread shows — and "edit the full
+  request" collapses the exchange back into plain editable text at any point.
+- **The AI shows its reading, in its own voice.** The model returns its judgement calls as
+  spoken first-person sentences ("I read 'afternoon' as starting at 2pm. I used the default
+  30-minute duration.") and they render inside its closing message, right above the
+  structured preview they explain. Trust comes from being checkable, not from confidence.
+- **Human review before anything is real.** Nothing is persisted at parse time; slots exist
+  only after the admin confirms the preview, and no invitation is "sent" until its message
+  is individually approved. LLM output never silently becomes state.
 
 ## Layout
 
@@ -63,15 +88,12 @@ is visibly labelled as demo output so it can't be mistaken for the real model.
    because every unknown name is an acquisition opportunity, not an error. It's a new
    mutation surface, so it's cut and named. (Typos are already handled: "invite Pryia"
    asks "Did you mean Priya Patel?".)
-4. **Bulk NL operations** ("cancel all viewings for Maple Street", "move Tuesday's to
-   Wednesday"). Same parse → preview → confirm pattern, new mutation surface — the
-   two-phase architecture already accommodates it.
-5. **Smart defaults from history.** Learn per-property duration/capacity norms and feed
+4. **Smart defaults from history.** Learn per-property duration/capacity norms and feed
    them into the prompt as defaults; needs usage data to be meaningful.
-6. **An eval harness.** `LlmCallLog` is already accumulating real inputs and outputs;
+5. **An eval harness.** `LlmCallLog` is already accumulating real inputs and outputs;
    replaying them against prompt changes turns prompt edits from guesswork into a
    regression suite. At real volume this is the first thing I'd build.
-7. **Decline flow, lead management UI, pagination, rate limiting** — standard production
+6. **Decline flow, lead management UI, pagination, rate limiting** — standard production
    furniture, wrong complexity for this stage.
 
 **Known trade-offs accepted:** naive local times (Europe/Dublin assumed, no cross-timezone
