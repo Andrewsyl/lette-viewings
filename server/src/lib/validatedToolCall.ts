@@ -29,25 +29,39 @@ export async function invokeWithValidation<S extends z.ZodTypeAny>(
 ): Promise<z.infer<S>> {
   const started = Date.now();
 
-  let attempt = await opts.client.invokeTool({
-    system: opts.system,
-    user: opts.user,
-    tool: opts.tool,
-    maxTokens: opts.maxTokens,
-  });
+  // Provider/network failures are audited too — "every model call is a query away"
+  // must include the ones that never returned.
+  const invoke = async (user: string) => {
+    try {
+      return await opts.client.invokeTool({ system: opts.system, user, tool: opts.tool, maxTokens: opts.maxTokens });
+    } catch (err) {
+      await prisma.llmCallLog
+        .create({
+          data: {
+            kind: opts.kind,
+            model: env.ANTHROPIC_MODEL,
+            input: user,
+            rawOutput: "",
+            parsedOk: false,
+            error: `provider failure: ${err instanceof Error ? err.message : String(err)}`,
+            latencyMs: Date.now() - started,
+          },
+        })
+        .catch(() => {}); // audit best-effort — never mask the real failure
+      throw err;
+    }
+  };
+
+  let attempt = await invoke(opts.user);
   let parsed = opts.schema.safeParse(attempt.input);
 
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
-    attempt = await opts.client.invokeTool({
-      system: opts.system,
-      user:
-        `${opts.user}\n\n` +
+    attempt = await invoke(
+      `${opts.user}\n\n` +
         `Your previous attempt failed validation with these errors: ${issues}. ` +
-        `Return a corrected tool call.${opts.repairHint ? ` ${opts.repairHint}` : ""}`,
-      tool: opts.tool,
-      maxTokens: opts.maxTokens,
-    });
+        `Return a corrected tool call.${opts.repairHint ? ` ${opts.repairHint}` : ""}`
+    );
     parsed = opts.schema.safeParse(attempt.input);
   }
 

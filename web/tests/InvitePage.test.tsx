@@ -71,10 +71,24 @@ describe("InvitePage", () => {
     renderPage();
 
     await userEvent.click(await screen.findByRole("button", { name: /accept invitation/i }));
-    expect(await screen.findByText(/just filled up/i)).toBeInTheDocument();
+    expect(await screen.findByText(/viewing is full/i)).toBeInTheDocument();
 
     await userEvent.click(screen.getByText(/5 of 5 spots remaining/i));
     expect(await screen.findByText(/you're confirmed/i)).toBeInTheDocument();
+    expect(screen.getByText(/original invitation has been replaced/i)).toBeInTheDocument();
+  });
+
+  it("does not offer acceptance when the invitation loads with no capacity", async () => {
+    mockFetchRoutes({
+      "GET /api/invitations/inv_1": {
+        body: { ...invitation, slot: { ...slot, acceptedCount: 5 }, spotsRemaining: 0 },
+      },
+    });
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: /see alternative times/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^accept invitation$/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/won't be booked until you choose/i)).toBeInTheDocument();
   });
 
   it("shows an already-accepted invitation as confirmed on load", async () => {

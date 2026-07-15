@@ -12,7 +12,8 @@ type State =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "viewing"; invitation: InvitationView }
-  | { kind: "accepted"; slot: SlotWithCounts }
+  | { kind: "accepted"; slot: SlotWithCounts; replacedOriginal?: boolean }
+  | { kind: "declined" }
   | { kind: "full"; invitation: InvitationView; alternatives: SlotWithCounts[] };
 
 export default function InvitePage() {
@@ -26,6 +27,8 @@ export default function InvitePage() {
       .then((invitation) => {
         if (invitation.status === "ACCEPTED") {
           setState({ kind: "accepted", slot: invitation.slot });
+        } else if (invitation.status === "DECLINED") {
+          setState({ kind: "declined" });
         } else {
           setState({ kind: "viewing", invitation });
         }
@@ -42,6 +45,8 @@ export default function InvitePage() {
       const result = await acceptInvitation(id);
       if (result.accepted) {
         setState({ kind: "accepted", slot: result.slot });
+      } else if ("declined" in result) {
+        setState({ kind: "declined" });
       } else {
         setState({ kind: "full", invitation: state.invitation, alternatives: result.alternatives });
       }
@@ -58,7 +63,9 @@ export default function InvitePage() {
     try {
       const result = await acceptAlternative(id, slotId);
       if (result.accepted) {
-        setState({ kind: "accepted", slot: result.slot });
+        setState({ kind: "accepted", slot: result.slot, replacedOriginal: true });
+      } else if ("declined" in result) {
+        setState({ kind: "declined" });
       } else {
         setState((prev) => (prev.kind === "full" ? { ...prev, alternatives: result.alternatives } : prev));
       }
@@ -90,15 +97,32 @@ export default function InvitePage() {
           <ViewingCard invitation={state.invitation} busy={busy} onAccept={handleAccept} />
         )}
 
+        {state.kind === "declined" && (
+          <Card>
+            <h1 className="text-[22px] font-bold tracking-tight text-stone-900">
+              This invitation was declined
+            </h1>
+            <p className="mt-2 text-sm text-stone-500">
+              You've already passed on this viewing, so it can't be accepted from this link. If
+              you've changed your mind, get in touch with the property team and they'll sort you
+              out with a new time.
+            </p>
+          </Card>
+        )}
+
         {state.kind === "accepted" && (
           <Card className="border-emerald-200">
-            <div className="flex items-start gap-4">
+            <div className="flex items-start gap-4" aria-live="polite">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-700 text-lg text-white">
                 ✓
               </span>
               <div>
                 <h1 className="text-[22px] font-bold tracking-tight text-emerald-900">You're confirmed</h1>
-                <p className="mt-1 text-sm text-stone-500">We've held your spot — see you there.</p>
+                <p className="mt-1 text-sm text-stone-500">
+                  {state.replacedOriginal
+                    ? "Your original invitation has been replaced with this time."
+                    : "We've held your spot — see you there."}
+                </p>
               </div>
             </div>
             <div className="mt-5 flex items-center gap-4 rounded-xl bg-stone-50 p-4">
@@ -114,9 +138,9 @@ export default function InvitePage() {
 
         {state.kind === "full" && (
           <div className="space-y-4">
-            <Card className="border-amber-200 bg-amber-50/60">
+            <Card className="border-amber-200 bg-amber-50/60" >
               <p className="text-sm text-amber-900">
-                That viewing just filled up — but there are other times for{" "}
+                That viewing is full — but there are other times for{" "}
                 <span className="font-semibold">{state.invitation.slot.property.name}</span>:
               </p>
             </Card>
@@ -161,6 +185,7 @@ export default function InvitePage() {
 // bubble language as the admin thread, so the product speaks with one voice.
 function ViewingCard(props: { invitation: InvitationView; busy: boolean; onAccept: () => void }) {
   const { invitation } = props;
+  const isFull = invitation.spotsRemaining <= 0;
   return (
     <div className="fade-up space-y-5">
       <header>
@@ -188,11 +213,16 @@ function ViewingCard(props: { invitation: InvitationView; busy: boolean; onAccep
             </p>
           </div>
         </div>
-        <Button variant="accent" onClick={props.onAccept} disabled={props.busy} className="mt-5 w-full py-3">
-          {props.busy ? "Confirming…" : "Accept invitation"}
+        {isFull && (
+          <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            This viewing is full. I can show you the nearest available times instead.
+          </div>
+        )}
+        <Button variant="accent" onClick={props.onAccept} disabled={props.busy} className="mt-4 w-full py-3">
+          {props.busy ? "Checking times…" : isFull ? "See alternative times" : "Accept invitation"}
         </Button>
         <p className="mt-2.5 text-center text-xs text-stone-400">
-          One tap — your spot is held straight away.
+          {isFull ? "You won't be booked until you choose a new time." : "One tap — your spot is held straight away."}
         </p>
       </Card>
     </div>

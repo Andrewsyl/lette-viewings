@@ -107,4 +107,60 @@ describe("capacity enforcement", () => {
     const outcome = await acceptAlternative(loser.id, altSlot.id);
     expect(outcome.kind).toBe("full");
   });
+
+  it("atomically transfers when the lead already holds a pending invitation on the target slot", async () => {
+    // Confirmation invites every lead to every slot, so this duplicate is the NORMAL case.
+    // The invitation at the invitee's URL must end up accepted at the new slot — a refresh
+    // of their link must never show the stale pending original — and the OTHER link must
+    // survive too (swap, not delete): a lead's second emailed link must never 404.
+    const fullSlot = await makeSlot({ maxAttendees: 1 });
+    const altSlot = await makeSlot({ maxAttendees: 5, hoursFromNow: 72 });
+
+    const winner = await invite(fullSlot.id, "lead_johnson");
+    await acceptInvitation(winner.id);
+    const urlInvitation = await invite(fullSlot.id, "lead_patel");
+    const duplicate = await invite(altSlot.id, "lead_patel"); // pre-existing row for the target
+
+    const outcome = await acceptAlternative(urlInvitation.id, altSlot.id);
+    expect(outcome.kind).toBe("accepted");
+
+    // The URL row is canonical: repointed and accepted…
+    const canonical = await prisma.invitation.findUniqueOrThrow({ where: { id: urlInvitation.id } });
+    expect(canonical.slotId).toBe(altSlot.id);
+    expect(canonical.status).toBe("ACCEPTED");
+    // …the other link's id still resolves, now offering the original slot, still open.
+    const swapped = await prisma.invitation.findUniqueOrThrow({ where: { id: duplicate.id } });
+    expect(swapped.slotId).toBe(fullSlot.id);
+    expect(swapped.status).toBe("PENDING");
+    // Exactly one seat is held across the pair.
+    const accepted = await prisma.invitation.count({ where: { leadId: "lead_patel", status: "ACCEPTED" } });
+    expect(accepted).toBe(1);
+  });
+
+  it("never moves an already-accepted invitee via a stale full-slot page", async () => {
+    const slot = await makeSlot({ maxAttendees: 2 });
+    const other = await makeSlot({ maxAttendees: 5, hoursFromNow: 72 });
+    const inv = await invite(slot.id, "lead_johnson");
+    await acceptInvitation(inv.id);
+
+    const outcome = await acceptAlternative(inv.id, other.id);
+    expect(outcome.kind).toBe("already-accepted");
+    if (outcome.kind === "already-accepted") expect(outcome.slot.id).toBe(slot.id);
+
+    const row = await prisma.invitation.findUniqueOrThrow({ where: { id: inv.id } });
+    expect(row.slotId).toBe(slot.id); // seat untouched
+  });
+
+  it("a declined invitation stays declined — accept and accept-alternative both refuse", async () => {
+    const slot = await makeSlot({ maxAttendees: 5 });
+    const other = await makeSlot({ maxAttendees: 5, hoursFromNow: 72 });
+    const inv = await prisma.invitation.create({
+      data: { slotId: slot.id, leadId: "lead_johnson", status: "DECLINED" },
+    });
+
+    expect((await acceptInvitation(inv.id)).kind).toBe("declined");
+    expect((await acceptAlternative(inv.id, other.id)).kind).toBe("declined");
+    const row = await prisma.invitation.findUniqueOrThrow({ where: { id: inv.id } });
+    expect(row.status).toBe("DECLINED");
+  });
 });

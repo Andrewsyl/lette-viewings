@@ -4,6 +4,11 @@ export class NotFoundError extends Error {
   status = 404;
 }
 
+/** The requested change collides with current state (double-booking, stale preview). */
+export class ConflictError extends Error {
+  status = 409;
+}
+
 /** LLM unreachable / not configured — the feature is down, the app is not. */
 export class LlmUnavailableError extends Error {
   status = 502;

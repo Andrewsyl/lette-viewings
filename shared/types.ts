@@ -165,13 +165,23 @@ export interface SlotFullResponse {
   alternatives: SlotWithCounts[];
 }
 
+/** 409 body when the invitation was declined — a decision, not a capacity problem. */
+export interface InvitationDeclinedResponse {
+  accepted: false;
+  declined: true;
+  message: string;
+}
+
 /** Server-sent events emitted by POST /api/invitations/draft/stream */
 export type DraftStreamEvent =
   | { type: "start"; leadId: string }
   | { type: "delta"; leadId: string; text: string }
   | { type: "done"; leadId: string; message: string }
   | { type: "error"; leadId: string; message: string }
-  | { type: "complete" };
+  /** `fatal` set = the whole stream died mid-flight (provider failure after headers were
+   *  sent, so no HTTP status could carry it) — the client throws and falls back to the
+   *  batch draft endpoint. */
+  | { type: "complete"; fatal?: string };
 
 /** The stubbed session: who the admin is (used to greet them by name). */
 export interface MeResponse {

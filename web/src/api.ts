@@ -6,6 +6,7 @@ import type {
   DraftRequest,
   DraftResponse,
   DraftStreamEvent,
+  InvitationDeclinedResponse,
   InvitationSummary,
   InvitationView,
   LeadSummary,
@@ -66,9 +67,12 @@ export function getInvitation(id: string): Promise<InvitationView> {
   return request(`/api/invitations/${id}`);
 }
 
-// Accept can legitimately "fail" with 409 + alternatives — that's a product state, not an
-// error, so it's part of the return type rather than a thrown exception.
-export async function acceptInvitation(id: string): Promise<AcceptSuccessResponse | SlotFullResponse> {
+// Accept can legitimately "fail" with 409 + alternatives (slot full) or 409 + declined —
+// those are product states, not errors, so they're part of the return type rather than a
+// thrown exception.
+export async function acceptInvitation(
+  id: string
+): Promise<AcceptSuccessResponse | SlotFullResponse | InvitationDeclinedResponse> {
   const res = await fetch(`/api/invitations/${id}/accept`, { method: "POST" });
   const body = await res.json().catch(() => null);
   if (res.ok || res.status === 409) return body;
@@ -78,7 +82,7 @@ export async function acceptInvitation(id: string): Promise<AcceptSuccessRespons
 export async function acceptAlternative(
   id: string,
   slotId: string
-): Promise<AcceptSuccessResponse | SlotFullResponse> {
+): Promise<AcceptSuccessResponse | SlotFullResponse | InvitationDeclinedResponse> {
   const res = await fetch(`/api/invitations/${id}/accept-alternative`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -115,7 +119,9 @@ export async function streamDrafts(
     for (const frame of frames) {
       const dataLine = frame.split("\n").find((line) => line.startsWith("data: "));
       if (!dataLine) continue;
-      onEvent(JSON.parse(dataLine.slice(6)) as DraftStreamEvent);
+      const event = JSON.parse(dataLine.slice(6)) as DraftStreamEvent;
+      if (event.type === "complete" && event.fatal) throw new Error(event.fatal);
+      onEvent(event);
     }
   }
 }

@@ -69,9 +69,16 @@ model returned something that *looks* right." Every layer here exists to catch t
    it never invents entities.
 6. **Two-phase creation.** `POST /api/nl/parse` persists nothing. The admin approves the
    preview, and the *approved payload* goes to `POST /api/slots/confirm`, which re-validates
-   with the same Zod schema before writing. LLM output never directly reaches the database.
+   from scratch (its own Zod schema, existence checks, future-dates) and re-runs the
+   no-double-booking check **inside the write transaction** — against the post-operation
+   timeline (existing viewings minus cancellations, reschedules at their new times, plus
+   each new slot). A stale preview, a tampered payload, or a booking created between
+   preview and confirm gets a 409, not a double-booking. The parse-time clash repair is a
+   preview convenience; the transaction is the guarantee. LLM output never directly
+   reaches the database.
 7. **Auditability.** Every model call is recorded in `LlmCallLog` (kind, input, raw output,
-   parsed ok?, error, latency). When someone asks "why did it create that slot?", the answer
+   parsed ok?, error, latency) — including provider-level failures, logged with the error
+   before the 502 surfaces. When someone asks "why did it create that slot?", the answer
    is a query, not an archaeology project.
 8. **Untrusted input / prompt injection.** Lead notes and the admin's free text both flow
    into prompts. In this demo they come from seeds and a trusted admin, but in a real system
@@ -123,24 +130,41 @@ instead of an error.
 |---|---|
 | Invalid request body | 422 (Zod details) |
 | LLM output invalid after repair retry | 422 with a human-readable message ("I couldn't reliably interpret that — try rephrasing") |
-| LLM unavailable / no API key | 502 with an actionable message; the rest of the app keeps working |
+| LLM unavailable / no key / provider or network failure | 502 with an actionable message (provider internals logged server-side, never sent to the client); the rest of the app keeps working |
+| Confirming would double-book a property | 409 with a message naming the property — re-preview and retry |
 | Slot full | 409 + alternatives payload |
+| Invitation already declined | 409 + declined payload — a decision isn't reversible by a stale link |
 | Unknown ids | 404 |
+| Drafting stream dies mid-flight | SSE `complete` event with `fatal` (headers already sent, so no status can carry it); the client throws and falls back to the batch endpoint |
 
 ## Assumptions (made deliberately, stated openly)
 
 - Single admin, hardcoded identity; invitees access their invitation by id-as-token link.
   The brief allows stubbed auth.
-- Times are naive local (Europe/Dublin) — no cross-timezone handling.
+- Times are naive local (Europe/Dublin) — no cross-timezone handling. The server pins its
+  process timezone to Europe/Dublin at boot so that assumption holds wherever it runs, and
+  the prompt derives "today" from the Dublin wall clock (a UTC date paired with a Dublin
+  weekday contradicts itself for an hour a night during Irish summer time).
 - "Sending" an invitation flips state and timestamps it; no email integration (per brief).
+  Deliberate consequence: an invitation link is live from the moment viewings are
+  confirmed, before its message is approved — approval gates the (simulated) send, not the
+  link. A real system would gate the link on the send.
+- An invitee moving to an alternative slot is an atomic transfer: the invitation at their
+  URL is canonical and gets repointed, so refreshing their link always shows the truth.
+  When the lead already held an invitation for the target slot, the two rows swap slot
+  assignments (messages travel with their slots) — every issued link stays resolvable and
+  no message describes the wrong viewing. An already-accepted invitee is never silently
+  moved by a stale "slot full" page, and a declined invitation stays declined. The deeper
+  fix is separating "invitation" from "booking" as entities — noted as the data model's
+  main limitation, not worth the churn at this scope.
 - Leads are pre-seeded; creating leads is out of scope.
 - No pagination/multi-tenancy — wrong complexity for this stage.
 
 ## Scope cuts (Pareto)
 
-Built: the three core flows + ambiguity resolution + shared FE/BE types + mobile-friendly UI.
+Built: the three core flows + ambiguity resolution + conversational manage operations
+(cancel/reschedule by name, in the same parse→preview→confirm loop) + streaming drafts +
+shared FE/BE types + mobile-friendly UI + a keyless demo mode.
 Cut (and why, and what I'd do with more time): smart defaults learned from slot history
-(needs usage data to be meaningful), bulk NL operations like "move Tuesday's viewings"
-(same parse→preview→confirm pattern, new mutation surface — the architecture already
-accommodates it), streaming drafts (isolated enhancement to one endpoint; first candidate if
-time allows), real auth.
+(needs usage data to be meaningful), recurring/bulk slot templates, real auth, email
+delivery.

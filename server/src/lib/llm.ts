@@ -51,22 +51,30 @@ class AnthropicLlmClient implements LlmClient {
   }
 
   async invokeTool(req: ToolCallRequest): Promise<ToolCallResult> {
-    const response = await this.client.messages.create({
-      model: env.ANTHROPIC_MODEL,
-      max_tokens: req.maxTokens ?? 2048,
-      system: req.system,
-      messages: [{ role: "user", content: req.user }],
-      tools: [
-        {
-          name: req.tool.name,
-          description: req.tool.description,
-          input_schema: req.tool.inputSchema as Anthropic.Tool["input_schema"],
-        },
-      ],
-      // Forced tool choice: structured output is a property of the request, not a hope
-      // about the response.
-      tool_choice: { type: "tool", name: req.tool.name },
-    });
+    let response: Anthropic.Message;
+    try {
+      response = await this.client.messages.create({
+        model: env.ANTHROPIC_MODEL,
+        max_tokens: req.maxTokens ?? 2048,
+        system: req.system,
+        messages: [{ role: "user", content: req.user }],
+        tools: [
+          {
+            name: req.tool.name,
+            description: req.tool.description,
+            input_schema: req.tool.inputSchema as Anthropic.Tool["input_schema"],
+          },
+        ],
+        // Forced tool choice: structured output is a property of the request, not a hope
+        // about the response.
+        tool_choice: { type: "tool", name: req.tool.name },
+      });
+    } catch (err) {
+      // Provider/network failures map to the documented 502 taxonomy — the raw SDK error
+      // (which can carry provider internals) is logged, never sent to the client.
+      console.error("Anthropic invokeTool failed:", err);
+      throw new LlmUnavailableError();
+    }
 
     const toolBlock = response.content.find((block) => block.type === "tool_use");
     if (!toolBlock || toolBlock.type !== "tool_use") {
@@ -78,18 +86,23 @@ class AnthropicLlmClient implements LlmClient {
   }
 
   async streamText(req: StreamTextRequest, onDelta: (text: string) => void): Promise<string> {
-    const stream = this.client.messages.stream({
-      model: env.ANTHROPIC_MODEL,
-      max_tokens: req.maxTokens ?? 1024,
-      system: req.system,
-      messages: [{ role: "user", content: req.user }],
-    });
-    stream.on("text", onDelta);
-    const final = await stream.finalMessage();
-    return final.content
-      .filter((block) => block.type === "text")
-      .map((block) => (block as { type: "text"; text: string }).text)
-      .join("");
+    try {
+      const stream = this.client.messages.stream({
+        model: env.ANTHROPIC_MODEL,
+        max_tokens: req.maxTokens ?? 1024,
+        system: req.system,
+        messages: [{ role: "user", content: req.user }],
+      });
+      stream.on("text", onDelta);
+      const final = await stream.finalMessage();
+      return final.content
+        .filter((block) => block.type === "text")
+        .map((block) => (block as { type: "text"; text: string }).text)
+        .join("");
+    } catch (err) {
+      console.error("Anthropic streamText failed:", err);
+      throw new LlmUnavailableError();
+    }
   }
 }
 

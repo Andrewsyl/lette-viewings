@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+// The product operates in one timezone by design (see DESIGN.md): viewing times are
+// stored as naive local time and the prompt grounds "today" in Dublin. Pinning the
+// process timezone makes that assumption hold wherever the server actually runs —
+// otherwise a UTC host would interpret "14:00" differently than the design intends.
+// Must run before any Date is created.
+process.env.TZ = process.env.TZ ?? "Europe/Dublin";
+
 // Load server/.env if present (Node 20.12+ builtin — no dotenv dependency).
 // Caught: missing file is the normal zero-config case.
 try {

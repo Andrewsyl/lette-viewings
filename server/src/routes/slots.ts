@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/db.js";
+import { ConflictError } from "../lib/errors.js";
 import type { ConfirmResponse, SlotWithCounts } from "@lette/shared";
 
 const router = Router();
@@ -32,6 +33,19 @@ const confirmBody = z.object({
     .max(20)
     .optional()
     .default([]),
+}).superRefine((body, ctx) => {
+  // A viewing can't be both cancelled and moved — the transaction would delete it and
+  // then try to update the deleted row. Contradiction is a payload error, not a 500.
+  const cancels = new Set(body.cancelSlotIds);
+  for (const r of body.reschedules) {
+    if (cancels.has(r.slotId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reschedules"],
+        message: `Viewing ${r.slotId} appears in both cancelSlotIds and reschedules — it can be cancelled or moved, not both`,
+      });
+    }
+  }
 });
 
 function slotToDto(slot: {
@@ -93,6 +107,55 @@ router.post("/confirm", async (req, res, next) => {
     const cancelledDtos = touched.filter((t) => body.cancelSlotIds.includes(t.id)).map(slotToDto);
 
     const created = await prisma.$transaction(async (tx) => {
+      // The parse-time clash repair is a preview convenience, not the guarantee. The
+      // payload could be stale (someone booked between preview and confirm) or modified —
+      // so the no-double-booking invariant is re-checked HERE, inside the transaction,
+      // against the post-operation timeline: existing viewings minus cancellations, with
+      // reschedules at their new times, plus each new slot in turn. SQLite serialises
+      // writers, so nothing can slip in between this check and the writes below.
+      {
+        const cancelSet = new Set(body.cancelSlotIds);
+        const reschedMap = new Map(body.reschedules.map((r) => [r.slotId, r]));
+        const all = await tx.viewingSlot.findMany({ include: { property: true } });
+        type Entry = { propertyId: string; start: number; mins: number; name: string };
+        const overlap = (a: Entry, b: Entry) =>
+          a.propertyId === b.propertyId &&
+          a.start < b.start + b.mins * 60_000 &&
+          b.start < a.start + a.mins * 60_000;
+        const timeline: Entry[] = all
+          .filter((s) => !cancelSet.has(s.id) && !reschedMap.has(s.id))
+          .map((s) => ({ propertyId: s.propertyId, start: s.startsAt.getTime(), mins: s.durationMins, name: s.property.name }));
+        for (const r of body.reschedules) {
+          const origin = all.find((s) => s.id === r.slotId)!;
+          const entry: Entry = {
+            propertyId: origin.propertyId,
+            start: new Date(`${r.date}T${r.startTime}:00`).getTime(),
+            mins: origin.durationMins,
+            name: origin.property.name,
+          };
+          if (timeline.some((t) => overlap(t, entry))) {
+            throw new ConflictError(
+              `Moving that viewing would double-book ${entry.name} — the new time overlaps another viewing. Re-check the plan and try again.`
+            );
+          }
+          timeline.push(entry);
+        }
+        for (const slot of body.slots) {
+          const name = properties.find((p) => p.id === slot.propertyId)?.name ?? "the property";
+          const entry: Entry = {
+            propertyId: slot.propertyId,
+            start: new Date(`${slot.date}T${slot.startTime}:00`).getTime(),
+            mins: slot.durationMins,
+            name,
+          };
+          if (timeline.some((t) => overlap(t, entry))) {
+            throw new ConflictError(
+              `${entry.name} already has a viewing overlapping ${slot.date} ${slot.startTime} — the calendar may have changed since the preview. Re-check the plan and try again.`
+            );
+          }
+          timeline.push(entry);
+        }
+      }
       if (body.cancelSlotIds.length > 0) {
         await tx.invitation.deleteMany({ where: { slotId: { in: body.cancelSlotIds } } });
         await tx.viewingSlot.deleteMany({ where: { id: { in: body.cancelSlotIds } } });

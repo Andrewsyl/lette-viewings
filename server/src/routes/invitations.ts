@@ -108,6 +108,9 @@ router.get("/:id", async (req, res, next) => {
 router.post("/:id/accept", async (req, res, next) => {
   try {
     const outcome = await acceptInvitation(req.params.id);
+    if (outcome.kind === "declined") {
+      return res.status(409).json({ accepted: false, declined: true, message: "This invitation was declined and can no longer be accepted." });
+    }
     if (outcome.kind === "full") {
       const body: SlotFullResponse = { accepted: false, full: true, alternatives: outcome.alternatives };
       return res.status(409).json(body);
@@ -124,6 +127,9 @@ router.post("/:id/accept-alternative", async (req, res, next) => {
   try {
     const { slotId } = acceptAltBody.parse(req.body);
     const outcome = await acceptAlternative(req.params.id, slotId);
+    if (outcome.kind === "declined") {
+      return res.status(409).json({ accepted: false, declined: true, message: "This invitation was declined and can no longer be accepted." });
+    }
     if (outcome.kind === "full") {
       const body: SlotFullResponse = { accepted: false, full: true, alternatives: outcome.alternatives };
       return res.status(409).json(body);

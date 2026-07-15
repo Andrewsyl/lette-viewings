@@ -17,7 +17,7 @@ describe("API", () => {
   describe("POST /api/nl/parse", () => {
     it("returns a structured proposal for admin review", async () => {
       setLlmClient(new MockLlm([validProposal()]));
-      const res = await request(app).post("/api/nl/parse").send({ text: "three 30-minute slots at Maple St" });
+      const res = await request(app).post("/api/nl/parse").send({ text: "three 30-minute slots at Maple St at 2pm" });
 
       expect(res.status).toBe(200);
       expect(res.body.proposal.slots).toHaveLength(2);
@@ -125,6 +125,85 @@ describe("API", () => {
 
       const empty = await request(app).post("/api/slots/confirm").send({ slots: [], inviteeLeadIds: [] });
       expect(empty.status).toBe(422);
+    });
+
+    it("422s when the same viewing is both cancelled and rescheduled", async () => {
+      const slot = await prisma.viewingSlot.create({
+        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T10:00:00`), durationMins: 30, maxAttendees: 5 },
+      });
+      const res = await request(app)
+        .post("/api/slots/confirm")
+        .send({
+          slots: [],
+          inviteeLeadIds: [],
+          cancelSlotIds: [slot.id],
+          reschedules: [{ slotId: slot.id, date: futureDate(), startTime: "16:00" }],
+        });
+      expect(res.status).toBe(422);
+      // Untouched: neither cancelled nor moved.
+      const unchanged = await prisma.viewingSlot.findUniqueOrThrow({ where: { id: slot.id } });
+      expect(unchanged.startsAt.getTime()).toBe(new Date(`${futureDate()}T10:00:00`).getTime());
+    });
+
+    // The parse-time repair is a preview convenience — the no-double-booking invariant is
+    // re-enforced at confirmation, inside the transaction. A stale or tampered payload
+    // must 409, never write.
+    it("409s a payload that would double-book an existing viewing", async () => {
+      await prisma.viewingSlot.create({
+        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
+      });
+      const res = await request(app)
+        .post("/api/slots/confirm")
+        .send({
+          slots: [{ propertyId: "prop_maple", date: futureDate(), startTime: "14:15", durationMins: 30, maxAttendees: 5 }],
+          inviteeLeadIds: ["lead_johnson"],
+        });
+      expect(res.status).toBe(409);
+      expect(res.body.message).toContain("22 Maple Street");
+      expect(await prisma.viewingSlot.count()).toBe(1); // nothing written
+    });
+
+    it("409s a payload whose own slots overlap each other", async () => {
+      const res = await request(app)
+        .post("/api/slots/confirm")
+        .send({
+          slots: [
+            { propertyId: "prop_maple", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 },
+            { propertyId: "prop_maple", date: futureDate(), startTime: "14:15", durationMins: 30, maxAttendees: 5 },
+          ],
+          inviteeLeadIds: [],
+        });
+      expect(res.status).toBe(409);
+      expect(await prisma.viewingSlot.count()).toBe(0);
+    });
+
+    it("409s a reschedule that lands on another viewing", async () => {
+      await prisma.viewingSlot.create({
+        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
+      });
+      const toMove = await prisma.viewingSlot.create({
+        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T10:00:00`), durationMins: 30, maxAttendees: 5 },
+      });
+      const res = await request(app)
+        .post("/api/slots/confirm")
+        .send({ slots: [], inviteeLeadIds: [], reschedules: [{ slotId: toMove.id, date: futureDate(), startTime: "14:15" }] });
+      expect(res.status).toBe(409);
+      const unchanged = await prisma.viewingSlot.findUniqueOrThrow({ where: { id: toMove.id } });
+      expect(unchanged.startsAt.getTime()).toBe(new Date(`${futureDate()}T10:00:00`).getTime());
+    });
+
+    it("allows a new slot in the time freed by a cancellation in the same payload", async () => {
+      const cancelled = await prisma.viewingSlot.create({
+        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
+      });
+      const res = await request(app)
+        .post("/api/slots/confirm")
+        .send({
+          slots: [{ propertyId: "prop_maple", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 }],
+          inviteeLeadIds: [],
+          cancelSlotIds: [cancelled.id],
+        });
+      expect(res.status).toBe(201);
     });
   });
 
