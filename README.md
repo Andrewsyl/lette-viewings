@@ -9,6 +9,8 @@ enforces.** Model output never reaches the database or an invitee without passin
 fence and a human gate. `DESIGN.md` has the reasoning; `PROCESS.md` logs how AI tooling
 built it — including what it got wrong and how that was caught.
 
+![Describe viewings in plain English, review the structured plan, confirm, and watch personalised invitations draft themselves](docs/demo.gif)
+
 ## Quick start
 
 ```bash
