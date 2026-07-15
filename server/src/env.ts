@@ -16,7 +16,7 @@ try {
 }
 
 // Fail fast and loudly on bad config — but note ANTHROPIC_API_KEY is intentionally
-// optional: reviewers must be able to boot the app and run every non-LLM flow (and the
+// optional: the app must boot and run every non-LLM flow (and the
 // full test suite) without a key. LLM endpoints check availability and 502 cleanly.
 const envSchema = z.object({
   DATABASE_URL: z.string().default("file:./dev.db"),

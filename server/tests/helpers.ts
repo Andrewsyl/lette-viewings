@@ -45,6 +45,9 @@ export async function resetDb() {
 }
 
 export async function seedBasics() {
+  await prisma.adminUser.create({
+    data: { name: "Alex Byrne", email: "alex@lette-demo.test" },
+  });
   await prisma.property.create({
     data: { id: "prop_maple", name: "22 Maple Street", address: "22 Maple Street, Dublin 6" },
   });

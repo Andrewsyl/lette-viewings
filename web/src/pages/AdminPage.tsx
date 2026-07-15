@@ -46,6 +46,7 @@ type AdminSession = {
   text: string;
   thread: ThreadTurn[];
   parseText: string;
+  normalized: string | null;
   clarifications: ClarificationQuestion[];
   corrections: { from: string; to: string }[];
   parsed: ParseResponse | null;
@@ -132,6 +133,9 @@ export default function AdminPage() {
   // admin can hand-edit the whole exchange.
   const [thread, setThread] = useState<ThreadTurn[]>(saved?.thread ?? []);
   const [parseText, setParseText] = useState(saved?.parseText ?? "");
+  // The model's one-sentence restatement of the whole exchange — what "edit the full
+  // request" prefills, so hand-editing reads like a sentence, not a Q&A transcript.
+  const [normalized, setNormalized] = useState<string | null>(saved?.normalized ?? null);
   // A vague request doesn't navigate anywhere: the AI's question joins the thread and
   // the admin answers it in place — a tap on an option chip or a typed reply. Questions
   // the model marks `multiple` (pick-several, e.g. which leads) turn their chips into
@@ -142,8 +146,8 @@ export default function AdminPage() {
   const [corrections, setCorrections] = useState<{ from: string; to: string }[]>(saved?.corrections ?? []);
 
   useEffect(() => {
-    savedSession.current = { phase, text, thread, parseText, clarifications, corrections, parsed, created };
-  }, [phase, text, thread, parseText, clarifications, corrections, parsed, created]);
+    savedSession.current = { phase, text, thread, parseText, normalized, clarifications, corrections, parsed, created };
+  }, [phase, text, thread, parseText, normalized, clarifications, corrections, parsed, created]);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -161,7 +165,7 @@ export default function AdminPage() {
   const [meSettled, setMeSettled] = useState(false);
   useEffect(() => {
     fetchMe()
-      .then((me) => setAdminName(me.admin.name.split(" ")[0] ?? null))
+      .then((me) => setAdminName(me.admin.name?.split(" ")[0] ?? null))
       .catch(() => {})
       .finally(() => setMeSettled(true));
   }, []);
@@ -189,6 +193,7 @@ export default function AdminPage() {
       const result = await parseSlotRequest(candidate);
       if (result.proposal.clarifications.length > 0) {
         setParseText(candidate);
+        setNormalized(result.proposal.normalizedRequest ?? null);
         setClarifications(result.proposal.clarifications);
         setCorrections(result.proposal.corrections ?? []);
         setSelected([]);
@@ -222,6 +227,7 @@ export default function AdminPage() {
         return;
       }
       setParseText(candidate);
+      setNormalized(result.proposal.normalizedRequest ?? null);
       setParsed(result);
       setPhase("preview");
     } catch (err) {
@@ -271,9 +277,14 @@ export default function AdminPage() {
     void runParse(next);
   }
 
-  // Collapse the exchange back into the composer, answers included, for hand-editing.
+  // Collapse the exchange back into the composer for hand-editing. Prefilled with the
+  // model's normalized restatement (one clean sentence with every answer folded in)
+  // rather than the raw Q&A transcript — the admin reads and edits it here, which is the
+  // human gate that lets a model rewrite safely become the new request. Raw text is the
+  // fallback when no normalization is available (demo mode, mocks).
   function editRequest() {
-    setText(parseText);
+    setText(normalized ?? parseText);
+    setNormalized(null);
     setThread([]);
     setClarifications([]);
     setCorrections([]);
@@ -306,6 +317,7 @@ export default function AdminPage() {
     setText("");
     setThread([]);
     setParseText("");
+    setNormalized(null);
     setParsed(null);
     setCreated(null);
     setError(null);

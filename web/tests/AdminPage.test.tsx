@@ -651,6 +651,32 @@ describe("AdminPage", () => {
     expect(await screen.findByText(/all set — cancelled the viewing at 22 Maple Street/i)).toBeInTheDocument();
   });
 
+  it("prefills 'edit the full request' with the AI's clean restatement, not the Q&A transcript", async () => {
+    mockFetchRoutes({
+      "POST /api/nl/parse": {
+        body: {
+          ...parseResponse,
+          proposal: {
+            ...parseResponse.proposal,
+            normalizedRequest: "Two 30-minute viewings at 22 Maple Street on Tuesday 12 January at 2pm, invite Sarah.",
+          },
+        },
+      },
+    });
+    renderPage();
+
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "some viewings for maple st sometime");
+    await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
+    await screen.findByText(/got it — 2 viewings/i);
+
+    await userEvent.click(screen.getByRole("button", { name: /edit the full request/i }));
+
+    const composer = screen.getByLabelText(/what do you need/i);
+    expect(composer).toHaveValue(
+      "Two 30-minute viewings at 22 Maple Street on Tuesday 12 January at 2pm, invite Sarah."
+    );
+  });
+
   it("greets the admin by name, with a time-of-day salutation", async () => {
     mockFetchRoutes({
       "GET /api/me": { body: { admin: { id: "a1", name: "Alex Byrne", email: "alex@lette-demo.test" } } },
@@ -659,6 +685,17 @@ describe("AdminPage", () => {
 
     expect(
       await screen.findByText(/good (morning|afternoon|evening), alex — i'm vera/i)
+    ).toBeInTheDocument();
+  });
+
+  it("greets namelessly when no name is available — never guesses one", async () => {
+    mockFetchRoutes({
+      "GET /api/me": { body: { admin: { id: "a1", name: null, email: "alex@lette-demo.test" } } },
+    });
+    renderPage();
+
+    expect(
+      await screen.findByText(/good (morning|afternoon|evening) — i'm vera/i)
     ).toBeInTheDocument();
   });
 });

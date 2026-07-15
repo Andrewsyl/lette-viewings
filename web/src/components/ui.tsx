@@ -166,7 +166,7 @@ export function Shell({ children, nav = false }: { children: ReactNode; nav?: bo
   if (nav) {
     return (
       <div className="flex min-h-screen flex-col bg-stone-50 md:flex-row">
-        <aside className="border-b border-stone-200/70 bg-white/60 px-4 py-4 backdrop-blur md:flex md:min-h-screen md:w-56 md:shrink-0 md:flex-col md:border-b-0 md:border-r md:px-4 md:py-5">
+        <aside className="border-b border-stone-200/70 bg-white/60 px-4 py-4 backdrop-blur md:sticky md:top-0 md:flex md:h-screen md:w-56 md:shrink-0 md:self-start md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:px-4 md:py-5">
           <div className="mb-1 px-1 md:mb-8">
             <Wordmark />
           </div>

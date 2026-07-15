@@ -46,6 +46,18 @@ describe("API", () => {
     });
   });
 
+  describe("GET /api/me", () => {
+    it("returns the local git name for the greeting, or null — never a guessed persona", async () => {
+      const res = await request(app).get("/api/me");
+      expect(res.status).toBe(200);
+      // Environment-dependent (git identity present or not), but the invariant holds
+      // everywhere: a real name or null, never the seeded demo persona's.
+      expect(res.body.admin.name === null || res.body.admin.name.length > 0).toBe(true);
+      expect(res.body.admin.name).not.toBe("Alex Byrne");
+      expect(res.body.admin.email).toBe("alex@lette-demo.test");
+    });
+  });
+
   describe("POST /api/slots/confirm", () => {
     it("creates slots + pending invitations from the approved payload", async () => {
       const res = await request(app)

@@ -77,6 +77,16 @@ const TOOL: ToolSpec = {
           "while an earlier instruction still stands gets BOTH the reply and the proposal — never " +
           "leave such a question unanswered.",
       },
+      normalizedRequest: {
+        type: "string",
+        description:
+          "The WHOLE request restated as one clean message the admin could have typed, folding in " +
+          "every clarification answer and follow-up so far — e.g. 'Three 30-minute viewings at " +
+          "9 Botanic View on Monday 20 July in the afternoon, invite Priya and Ada'. It must carry " +
+          "every decided detail (property, how many, day, time or part of day, duration and " +
+          "invitees when stated) because the admin can hand-edit it and it gets re-parsed as the " +
+          "entire request — anything you leave out is lost. Plain English, no internal ids.",
+      },
       window: {
         type: "object",
         properties: {
@@ -123,7 +133,7 @@ const TOOL: ToolSpec = {
         description: "Existing viewings the admin asked to move, with their new date/time.",
       },
     },
-    required: ["slots", "inviteeLeadIds", "clarifications", "assumptions", "window"],
+    required: ["slots", "inviteeLeadIds", "clarifications", "assumptions", "window", "normalizedRequest"],
   },
 };
 
@@ -168,6 +178,9 @@ function buildProposalSchema(
       .max(5),
     assumptions: z.array(z.string().min(1)).max(8).optional().default([]),
     reply: z.string().min(1).max(800).optional(),
+    // Optional in Zod (mocks and the demo client may omit it); the client falls back to
+    // the raw exchange text when absent.
+    normalizedRequest: z.string().min(1).max(600).optional(),
     window: z
       .object({
         earliest: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
@@ -646,6 +659,7 @@ export async function parseSlotRequest(text: string, llm?: LlmClient): Promise<P
     ...proposal,
     assumptions: proposal.assumptions.map(humanize),
     ...(proposal.reply ? { reply: humanize(proposal.reply) } : {}),
+    ...(proposal.normalizedRequest ? { normalizedRequest: humanize(proposal.normalizedRequest) } : {}),
   };
 
   // One question per turn, guaranteed in code. The prompt asks for it and orders

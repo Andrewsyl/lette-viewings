@@ -62,6 +62,12 @@ export interface SlotProposal {
    *  booked Tuesday?", "can you delete viewings?") — rendered as the AI's turn in the
    *  thread. Only meaningful when the proposal contains no actions or questions. */
   reply?: string;
+  /** The whole exchange restated as one clean message the admin could have typed —
+   *  every clarification answer and follow-up folded in. Used to prefill "edit the full
+   *  request" so hand-editing reads like a sentence, not a Q&A transcript; the admin
+   *  reviews it before it becomes the new request, so the model rewrite passes a human
+   *  gate. Absent (mocks/demo) ⇒ the UI falls back to the raw exchange text. */
+  normalizedRequest?: string;
   /** The start–end range (HH:MM) the admin's words allow ("afternoon" → 13:00–17:00).
    *  The clash repair may move slots freely inside it but never outside — going outside
    *  the window is a question for the admin, not a repair. */
@@ -185,7 +191,9 @@ export type DraftStreamEvent =
 
 /** The stubbed session: who the admin is (used to greet them by name). */
 export interface MeResponse {
-  admin: { id: string; name: string; email: string };
+  /** name is null when the local environment can't provide one (no git identity) —
+   *  the greeting drops the name rather than guessing. Never a made-up persona. */
+  admin: { id: string; name: string | null; email: string };
 }
 
 export interface ApiError {
