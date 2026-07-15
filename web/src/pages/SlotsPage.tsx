@@ -40,14 +40,18 @@ export default function SlotsPage() {
         )}
 
         {state.kind === "loaded" && state.slots.length === 0 && (
-          <Card>
-            <p className="text-[15px] text-stone-500">
-              No viewings yet —{" "}
-              <Link to="/admin" className="font-semibold text-emerald-800 underline underline-offset-2">
-                describe your first one
-              </Link>{" "}
-              in plain English.
+          <Card className="text-center">
+            <p className="text-xs font-bold uppercase tracking-wider text-emerald-800">Your schedule starts with a sentence</p>
+            <h2 className="mt-2 text-xl font-bold tracking-tight">No viewings yet</h2>
+            <p className="mx-auto mt-2 max-w-md text-[15px] leading-relaxed text-stone-500">
+              Tell Vera the property, day, and who to invite. She'll turn it into a plan for you to review.
             </p>
+            <Link
+              to="/admin"
+              className="mt-5 inline-flex rounded-[14px] bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white shadow-card transition hover:-translate-y-0.5 hover:bg-emerald-800"
+            >
+              Describe your first viewing
+            </Link>
           </Card>
         )}
 
@@ -58,7 +62,7 @@ export default function SlotsPage() {
               const pending = invitations.filter((i) => i.status === "PENDING").length;
               return (
                 <li key={slot.id}>
-                  <Card className="flex items-center gap-5 p-5">
+                  <Card className="flex flex-col items-start gap-4 p-5 sm:flex-row sm:items-center sm:gap-5">
                     <DateBlock iso={slot.startsAt} />
                     <div className="min-w-0 flex-1">
                       <p className="text-[15px] font-semibold">
@@ -69,7 +73,7 @@ export default function SlotsPage() {
                         <CapacityDots taken={slot.acceptedCount} max={slot.maxAttendees} />
                       </p>
                     </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    <div className="flex shrink-0 flex-wrap gap-1.5 sm:ml-auto sm:flex-col sm:items-end">
                       <Badge tone="green">{slot.acceptedCount} accepted</Badge>
                       {pending > 0 && <Badge tone="stone">{pending} pending</Badge>}
                     </div>

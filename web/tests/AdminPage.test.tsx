@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import AdminPage from "../src/pages/AdminPage";
+import AdminPage, { wantsReset } from "../src/pages/AdminPage";
 import { mockFetchRoutes } from "./setup";
 import type { ParseResponse, ConfirmResponse } from "@lette/shared";
 
@@ -62,6 +62,8 @@ describe("AdminPage", () => {
     expect(await screen.findByText(/2 viewings to create/i)).toBeInTheDocument();
     expect(screen.getAllByText(/22 Maple Street/i).length).toBeGreaterThan(0);
     expect(screen.getByText("Sarah Johnson")).toBeInTheDocument();
+    expect(screen.getByText(/draft · not created/i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing below exists until you confirm/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /confirm & create/i })).toBeEnabled();
   });
 
@@ -265,6 +267,7 @@ describe("AdminPage", () => {
     expect(screen.getByText("slots at Maple St on Tuesday afternoon")).toBeInTheDocument();
     // …and she speaks her judgement calls in her own voice.
     expect(screen.getByText(/starting at 2pm/)).toBeInTheDocument();
+    expect(screen.getByText(/how i interpreted this/i)).toBeInTheDocument();
   });
 
   it("shows the AI's answer in the preview when a question rode along with the plan", async () => {
@@ -322,6 +325,66 @@ describe("AdminPage", () => {
     expect(screen.getByRole("button", { name: /draft invitations with ai/i })).toBeInTheDocument();
   });
 
+  it("shows approval progress and can approve all ready drafts", async () => {
+    const secondInvitation = {
+      ...confirmResponse.invitations[0]!,
+      id: "inv_2",
+      lead: { id: "lead_patel", name: "Priya Patel", email: "priya@example.com", notes: "Evenings only." },
+    };
+    const created = { ...confirmResponse, invitations: [...confirmResponse.invitations, secondInvitation] };
+    const stream = [
+      { type: "done", leadId: "lead_johnson", message: "Hi Sarah — here is your reviewed invitation message for Maple Street." },
+      { type: "done", leadId: "lead_patel", message: "Hi Priya — here is your reviewed invitation message for Maple Street." },
+      { type: "complete" },
+    ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
+
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/me") return new Response(JSON.stringify({ admin: { id: "a1", name: "Alex", email: "a@x.io" } }));
+      if (url === "/api/nl/parse") return new Response(JSON.stringify(parseResponse));
+      if (url === "/api/slots/confirm") return new Response(JSON.stringify(created), { status: 201 });
+      if (url === "/api/invitations/draft/stream") return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
+      if (url.endsWith("/approve") && init?.method === "POST") return new Response(JSON.stringify({ ok: true }));
+      throw new Error(`Unmocked fetch: ${init?.method ?? "GET"} ${url}`);
+    }));
+    renderPage();
+
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "two viewings at Maple St");
+    await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /confirm & create/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /draft invitations with ai/i }));
+
+    expect(await screen.findByText(/0 of 2 invitations approved/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /approve all 2 ready drafts/i }));
+    expect(await screen.findByText(/2 of 2 invitations approved/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/sent ✓/i)).toHaveLength(2);
+    expect(screen.getAllByText(/preview invitation/i)).toHaveLength(2);
+  });
+
+  it("offers a per-lead retry when a streamed draft fails", async () => {
+    const stream = [
+      { type: "error", leadId: "lead_johnson", message: "Couldn't draft this message — try again or write it manually." },
+      { type: "complete" },
+    ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/me") return new Response(JSON.stringify({ admin: { id: "a1", name: "Alex", email: "a@x.io" } }));
+      if (url === "/api/nl/parse") return new Response(JSON.stringify(parseResponse));
+      if (url === "/api/slots/confirm") return new Response(JSON.stringify(confirmResponse), { status: 201 });
+      if (url === "/api/invitations/draft/stream") return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
+      throw new Error(`Unmocked fetch: ${url}`);
+    }));
+    renderPage();
+
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "two viewings at Maple St");
+    await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /confirm & create/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /draft invitations with ai/i }));
+
+    expect(await screen.findByRole("button", { name: /retry ai draft/i })).toBeInTheDocument();
+    expect(screen.getByText(/write the message manually/i)).toBeInTheDocument();
+  });
+
   it("lets the admin reply to the preview with changes instead of editing a form", async () => {
     mockFetchRoutes({ "POST /api/nl/parse": { body: parseResponse } });
     renderPage();
@@ -362,6 +425,10 @@ describe("AdminPage", () => {
     expect(screen.getByText("three slots at Maple St")).toBeInTheDocument();
     expect(screen.getByText(/got it — 2 viewings/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /confirm & create/i })).toBeEnabled();
+
+    // The remounted page fires its /api/me fetch; let it settle inside act so the test
+    // doesn't leak a state update past its own end.
+    await act(async () => {});
   });
 
   it("answers questions conversationally instead of showing an empty preview", async () => {
@@ -396,9 +463,134 @@ describe("AdminPage", () => {
       ([url]) => String(url).includes("/api/nl/parse")
     );
     expect(parseCalls).toHaveLength(2);
-    expect(JSON.parse(parseCalls[1]![1]!.body as string).text).toBe(
-      "can you delete viewings\n\ncancel them all"
+    // The first turn was a pure question (reply, no plan), so it does NOT accumulate into
+    // the request — otherwise every later turn re-answers it ("I'm good, thanks!" on top
+    // of the actual answer). The follow-up is parsed on its own.
+    expect(JSON.parse(parseCalls[1]![1]!.body as string).text).toBe("cancel them all");
+  });
+
+  it("does not accumulate conversational asides — each is parsed alone, never re-answered", async () => {
+    // The reported bug: three chit-chat turns, and the third ("list tomorrow's viewings")
+    // opened with "I'm doing well, thanks!" — re-answering the second. A reply-only turn
+    // must not pollute the request string, so every parse sees only the latest line.
+    const bodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.endsWith("/api/me")) {
+          return new Response(JSON.stringify({ admin: { id: "a1", name: "Alex", email: "a@x.io" } }), { status: 200 });
+        }
+        const text = JSON.parse(String(init?.body)).text as string;
+        bodies.push(text);
+        return new Response(
+          JSON.stringify({ ...parseResponse, proposal: { slots: [], inviteeLeadIds: [], clarifications: [], assumptions: [], reply: `Reply to: ${text}` } }),
+          { status: 200 }
+        );
+      })
     );
+    renderPage();
+
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "what's up with Sonic these days?");
+    await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
+    await screen.findByText(/Reply to: what's up with Sonic/i);
+
+    await userEvent.type(screen.getByPlaceholderText(/reply to vera/i), "oh good, how are you?");
+    await userEvent.click(screen.getByRole("button", { name: /^answer$/i }));
+    await screen.findByText(/Reply to: oh good, how are you\?/i);
+
+    await userEvent.type(screen.getByPlaceholderText(/reply to vera/i), "list tomorrow's viewings");
+    await userEvent.click(screen.getByRole("button", { name: /^answer$/i }));
+    await screen.findByText(/Reply to: list tomorrow's viewings/i);
+
+    // Every parse saw exactly the line just typed — no accumulation, no re-answering.
+    expect(bodies).toEqual([
+      "what's up with Sonic these days?",
+      "oh good, how are you?",
+      "list tomorrow's viewings",
+    ]);
+  });
+
+  it("keeps the preview intact when the admin asks an aside over it", async () => {
+    // Asking Vera a question from the preview (a reply-only turn) must answer in the
+    // thread without tearing down the plan the admin is about to confirm.
+    let call = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.endsWith("/api/me")) {
+          return new Response(JSON.stringify({ admin: { id: "a1", name: "Alex", email: "a@x.io" } }), { status: 200 });
+        }
+        call += 1;
+        if (call === 1) return new Response(JSON.stringify(parseResponse), { status: 200 });
+        // The aside: reply only.
+        return new Response(
+          JSON.stringify({ ...parseResponse, proposal: { slots: [], inviteeLeadIds: [], clarifications: [], assumptions: [], reply: "Sarah Johnson is a couple relocating from London." } }),
+          { status: 200 }
+        );
+      })
+    );
+    renderPage();
+
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "two viewings at Maple St, invite Johnson");
+    await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
+    expect(await screen.findByText(/got it — 2 viewings/i)).toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText(/anything to change/i), "who's Johnson again?");
+    await userEvent.click(screen.getByRole("button", { name: /^update$/i }));
+
+    // The answer appears AND the preview + confirm button are still there.
+    expect(await screen.findByText(/couple relocating from London/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /confirm & create/i })).toBeInTheDocument();
+  });
+
+  it("recognises reset intent but never mistakes a real instruction for one", () => {
+    // Discard-the-draft phrasings the admin actually used.
+    for (const t of [
+      "start over", "lets start over", "never mind", "scrap this", "discard the draft",
+      "remove that", "delete it", "remove it from the chat", "get rid of this",
+      "I don't want it", "reset", "forget it",
+    ]) {
+      expect(wantsReset(t)).toBe(true);
+    }
+    // Real instructions that must NOT be swallowed as a reset — especially the supported
+    // bulk cancel, and single-item refinements.
+    for (const t of [
+      "cancel all viewings", "cancel everything", "cancel Friday's viewings at Riverpoint",
+      "drop Priya", "remove the 2pm one", "make the last one 5pm", "invite Johnson",
+      "two viewings at Maple Street Monday at 2pm",
+    ]) {
+      expect(wantsReset(t)).toBe(false);
+    }
+  });
+
+  it("starts over from the preview when the admin asks to discard the draft", async () => {
+    mockFetchRoutes({ "POST /api/nl/parse": { body: parseResponse } });
+    renderPage();
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Maple St");
+    await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
+    expect(await screen.findByText(/got it — 2 viewings/i)).toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText(/anything to change/i), "actually, start over");
+    await userEvent.click(screen.getByRole("button", { name: /^update$/i }));
+
+    // Back to the fresh composer — no preview, no thread, no lingering listing.
+    expect(screen.getByLabelText(/what do you need/i)).toBeInTheDocument();
+    expect(screen.queryByText(/got it — 2 viewings/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/22 Maple Street/i)).not.toBeInTheDocument();
+  });
+
+  it("the Start over button clears the exchange", async () => {
+    mockFetchRoutes({ "POST /api/nl/parse": { body: parseResponse } });
+    renderPage();
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Maple St");
+    await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
+    await screen.findByText(/got it — 2 viewings/i);
+
+    await userEvent.click(screen.getByRole("button", { name: /start over/i }));
+    expect(screen.getByLabelText(/what do you need/i)).toBeInTheDocument();
+    expect(screen.queryByText(/got it — 2 viewings/i)).not.toBeInTheDocument();
   });
 
   it("previews cancellations and sends them with the confirmed payload", async () => {
@@ -447,6 +639,7 @@ describe("AdminPage", () => {
     // The preview says what's being cancelled — including who already accepted.
     expect(await screen.findByText(/got it — cancelling the viewing at 22 Maple Street/i)).toBeInTheDocument();
     expect(screen.getByText(/2 accepted — they'll need to be told/i)).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(/accepted attendees are affected/i);
 
     await userEvent.click(screen.getByRole("button", { name: /^confirm$/i }));
 

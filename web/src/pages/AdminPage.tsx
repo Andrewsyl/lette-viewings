@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   ClarificationQuestion,
   ConfirmResponse,
@@ -52,7 +52,7 @@ type AdminSession = {
   created: ConfirmResponse | null;
 };
 const savedSession: { current: AdminSession | null } = { current: null };
-const savedDrafts = new Map<string, { drafts: Record<string, string>; sent: Record<string, boolean> }>();
+const savedDrafts = new Map<string, { drafts: Record<string, string>; sent: Record<string, string> }>();
 
 /** Test seam (and future logout hook): forget any in-progress exchange. */
 export function resetAdminSession() {
@@ -92,6 +92,32 @@ function useTypedGreeting(fullText: string, ready: boolean): string {
   return fullText.slice(0, Math.min(chars, fullText.length));
 }
 
+// Clear ways an admin asks to scrap the current draft and begin again. The preview isn't
+// created yet, so "start over" / "remove that" / "I don't want it" mean reset the exchange
+// — not a scheduling instruction for the parser to puzzle over (and re-propose). Kept
+// conservative: "remove the 2pm one" or "drop Priya" are refinements, not resets.
+// Note: "cancel" is deliberately NOT a reset verb — "cancel all viewings" is a real
+// bulk-cancel of booked viewings, not a draft reset. Reset words are draft-scoped.
+const RESET_INTENT = new RegExp(
+  [
+    "start over",
+    "start again",
+    "starting over",
+    "never ?mind",
+    "forget (it|about it|this|that)",
+    "\\b(scrap|discard|reset)\\b",
+    "get rid of (it|that|this|the (listing|draft|preview|proposal))",
+    "(remove|delete|clear|scrap|discard)( the)? (listing|draft|preview|proposal)",
+    "(remove|delete|take|clear|get rid of)\\b[^.]*\\bchat\\b", // "remove it from the chat"
+    "(remove|delete|scrap|discard)( the| that| this| it)?\\s*$", // "remove that", "delete it"
+    "don'?t want (it|this|that|the (listing|draft|proposal|viewings?))",
+  ].join("|"),
+  "i"
+);
+export function wantsReset(text: string): boolean {
+  return RESET_INTENT.test(text.trim());
+}
+
 export default function AdminPage() {
   const saved = savedSession.current;
   const [phase, setPhase] = useState<Phase>(saved?.phase ?? "compose");
@@ -118,6 +144,16 @@ export default function AdminPage() {
   useEffect(() => {
     savedSession.current = { phase, text, thread, parseText, clarifications, corrections, parsed, created };
   }, [phase, text, thread, parseText, clarifications, corrections, parsed, created]);
+
+  const bottomRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (thread.length === 0) return;
+    const el = bottomRef.current;
+    // jsdom has no scrollIntoView — guard so tests don't throw.
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [thread, phase, parsed, busy]);
   // First name for Vera's greeting. Best-effort: if the stubbed session endpoint isn't
   // reachable the greeting simply drops the name rather than blocking anything. The
   // typewriter waits for this to settle so it never starts typing the wrong name.
@@ -140,15 +176,24 @@ export default function AdminPage() {
     `— property, day, who to invite — and I'll set them up. Nothing is created or sent until you say so.`;
   const greeting = useTypedGreeting(greetingFull, meSettled);
 
-  async function runParse(query: string) {
+  // `candidate` is the full request text to parse. runParse owns whether it becomes the
+  // committed `parseText`: a turn that builds the plan (a question to answer, or actual
+  // slots/cancels/moves) commits and advances; a turn that's just conversation — Vera
+  // answering "how are you?" or "what's booked?" — shows her reply in the thread but does
+  // NOT accumulate. Otherwise every later turn re-answers the chit-chat sitting in the
+  // request string, and an aside asked over a preview would blow the preview away.
+  async function runParse(candidate: string) {
     setBusy(true);
     setError(null);
     try {
-      const result = await parseSlotRequest(query);
+      const result = await parseSlotRequest(candidate);
       if (result.proposal.clarifications.length > 0) {
+        setParseText(candidate);
         setClarifications(result.proposal.clarifications);
         setCorrections(result.proposal.corrections ?? []);
         setSelected([]);
+        setParsed(null);
+        setPhase("compose");
         setThread((t) => [
           ...t,
           ...result.proposal.clarifications.map((c): ThreadTurn => ({ role: "ai", text: c.question })),
@@ -157,14 +202,14 @@ export default function AdminPage() {
       }
       setClarifications([]);
       setCorrections([]);
-      // No actions proposed means Vera talks instead of previewing: a question gets its
-      // answer (`reply`), and an empty proposal gets an honest nudge — never a blank
-      // "Got it" preview with nothing in it.
       const actions =
         result.proposal.slots.length +
         (result.proposal.cancelSlotIds?.length ?? 0) +
         (result.proposal.reschedules?.length ?? 0);
       if (actions === 0) {
+        // Conversational aside: answer it, but don't commit it to the request and don't
+        // disturb a preview already on screen. An empty proposal with no reply gets an
+        // honest nudge rather than a blank preview.
         setThread((t) => [
           ...t,
           {
@@ -176,6 +221,7 @@ export default function AdminPage() {
         ]);
         return;
       }
+      setParseText(candidate);
       setParsed(result);
       setPhase("preview");
     } catch (err) {
@@ -188,7 +234,6 @@ export default function AdminPage() {
   function startExchange() {
     const query = text.trim();
     setThread([{ role: "admin", text: query }]);
-    setParseText(query);
     void runParse(query);
   }
 
@@ -196,34 +241,33 @@ export default function AdminPage() {
     const escaped = correction.from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const fixed = parseText.replace(new RegExp(escaped, "i"), correction.to);
     setThread((t) => [...t, { role: "admin", text: correction.to }]);
-    setParseText(fixed);
     void runParse(fixed);
   }
 
-  // The visible thread and the parsed text advance together: the answer becomes the
-  // admin's next turn on screen, and an appended line in the single request string the
-  // server sees — conversational on the surface, stateless underneath.
+  // The answer becomes the admin's next turn on screen and an appended line in the single
+  // request string the server sees — conversational on the surface, stateless underneath.
+  // runParse commits the appended text only if it advances the plan.
   function answerClarification(question: string, answer: string) {
     const trimmed = answer.trim();
     if (!trimmed) return;
-    const next = `${parseText.trimEnd()}\n\nClarification — "${question}": ${trimmed}`;
+    if (wantsReset(trimmed)) return reset();
+    const base = parseText.trim();
+    const next = `${base}\n\nClarification — "${question}": ${trimmed}`;
     setThread((t) => [...t, { role: "admin", text: trimmed }]);
-    setParseText(next);
     setReply("");
     setSelected([]);
     void runParse(next);
   }
 
-  // The preview is Vera's turn, so pushing back on it is a message, not a form edit:
-  // the refinement joins the thread, appends to the request string, and re-parses.
+  // Pushing back on the plan (or just asking Vera something) is a message: it joins the
+  // thread and re-parses. runParse decides whether it changed the plan or was an aside.
   function refineRequest(refinement: string) {
     const trimmed = refinement.trim();
     if (!trimmed) return;
-    const next = `${parseText.trimEnd()}\n\n${trimmed}`;
+    if (wantsReset(trimmed)) return reset();
+    const base = parseText.trim();
+    const next = base ? `${base}\n\n${trimmed}` : trimmed;
     setThread((t) => [...t, { role: "admin", text: trimmed }]);
-    setParseText(next);
-    setParsed(null);
-    setPhase("compose");
     void runParse(next);
   }
 
@@ -265,6 +309,10 @@ export default function AdminPage() {
     setParsed(null);
     setCreated(null);
     setError(null);
+    setClarifications([]);
+    setCorrections([]);
+    setReply("");
+    setSelected([]);
   }
 
   return (
@@ -356,6 +404,20 @@ export default function AdminPage() {
 
         {thread.length > 0 && (
           <div className="space-y-4">
+            {/* Always-available escape hatch: the draft isn't created, so starting over
+                just clears the exchange. Sits above the thread so it's never buried. */}
+            <div className="flex items-center justify-between border-b border-stone-200/70 pb-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-stone-400">
+                Conversation
+              </span>
+              <button
+                type="button"
+                onClick={reset}
+                className="rounded-full px-3 py-1 text-xs font-semibold text-stone-500 transition hover:bg-stone-100 hover:text-stone-800"
+              >
+                Start over
+              </button>
+            </div>
             <Thread turns={thread} busy={busy} />
 
             {phase === "compose" && !busy && (
@@ -407,7 +469,7 @@ export default function AdminPage() {
                   </div>
                 )}
                 <form
-                  className="flex items-center gap-2"
+                  className="sticky bottom-3 z-20 flex items-center gap-2 rounded-full bg-stone-50/95 p-1 shadow-card backdrop-blur sm:static sm:bg-transparent sm:p-0 sm:shadow-none"
                   onSubmit={(e) => {
                     e.preventDefault();
                     // Toggled chips and any typed text travel as one comma-separated
@@ -464,6 +526,9 @@ export default function AdminPage() {
             {/* Confirmation doesn't navigate anywhere: Vera's "all set" summary and the
                 drafting cards are simply the conversation's next turns. */}
             {phase === "created" && created && <CreatedPanel created={created} onReset={reset} />}
+            {/* Keeps the newest turn (a preview, a reply) in view instead of buried under
+                a growing thread — the listing the admin is acting on shouldn't scroll off. */}
+            <div ref={bottomRef} aria-hidden />
           </div>
         )}
       </div>
@@ -584,7 +649,14 @@ function PreviewPanel(props: {
           )}
           <p className="text-[15px] leading-relaxed text-stone-700">{opener}</p>
           {proposal.assumptions.length > 0 && (
-            <p className="text-[14px] leading-relaxed text-stone-500">{proposal.assumptions.join(" ")}</p>
+            <div className="rounded-xl bg-emerald-50/70 px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                How I interpreted this
+              </p>
+              <p className="mt-1 text-[14px] leading-relaxed text-stone-600">
+                {proposal.assumptions.join(" ")}
+              </p>
+            </div>
           )}
           <p className="text-[15px] leading-relaxed text-stone-700">
             Look right? Nothing's created until you confirm.
@@ -592,7 +664,23 @@ function PreviewPanel(props: {
         </div>
       </div>
 
-      <div className="space-y-4 pl-10">
+      <div className="space-y-4 sm:pl-10">
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 bg-white/70 px-4 py-2.5">
+          <div>
+            <p className="text-sm font-semibold text-stone-700">Review the proposed actions</p>
+            <p className="text-xs text-stone-500">Nothing below exists until you confirm.</p>
+          </div>
+          <Badge tone="amber">Draft · not created</Badge>
+        </div>
+        {[...cancels, ...moves.map((move) => move.from).filter((slot): slot is NonNullable<typeof slot> => Boolean(slot))]
+          .some((slot) => slot.acceptedCount > 0) && (
+          <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <p className="text-sm font-semibold text-amber-900">Accepted attendees are affected</p>
+            <p className="mt-1 text-sm leading-relaxed text-amber-800">
+              Confirming this change will cancel or move a viewing that people have already accepted. They will need to be notified.
+            </p>
+          </div>
+        )}
         {proposal.slots.length > 0 && (
           <Card>
             <div className="flex items-baseline justify-between">
@@ -630,7 +718,7 @@ function PreviewPanel(props: {
             </h2>
             <ul className="mt-4 space-y-3">
               {cancels.map((slot) => (
-                <li key={slot.id} className="flex items-center gap-4">
+                <li key={slot.id} className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-4">
                   <DateBlock iso={slot.startsAt} />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold line-through decoration-stone-400">
@@ -638,11 +726,13 @@ function PreviewPanel(props: {
                     </p>
                     <p className="mt-0.5 text-xs text-stone-500">{slot.property.name}</p>
                   </div>
-                  <Badge tone={slot.acceptedCount > 0 ? "amber" : "stone"}>
-                    {slot.acceptedCount > 0
-                      ? `${slot.acceptedCount} accepted — they'll need to be told`
-                      : "no one accepted yet"}
-                  </Badge>
+                  <span className="sm:ml-auto">
+                    <Badge tone={slot.acceptedCount > 0 ? "amber" : "stone"}>
+                      {slot.acceptedCount > 0
+                        ? `${slot.acceptedCount} accepted — they'll need to be told`
+                        : "no one accepted yet"}
+                    </Badge>
+                  </span>
                 </li>
               ))}
             </ul>
@@ -658,7 +748,7 @@ function PreviewPanel(props: {
               {moves.map(({ to, from }) => {
                 const newIso = `${to.date}T${to.startTime}:00`;
                 return (
-                  <li key={to.slotId} className="flex items-center gap-4">
+                  <li key={to.slotId} className="flex items-start gap-4">
                     <DateBlock iso={newIso} />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold">{formatSlotTime(newIso)}</p>
@@ -679,7 +769,7 @@ function PreviewPanel(props: {
         {/* Replying to the plan is a message, not a form: changes go back through the
             same parse → preview loop, so the confirmation gate is never bypassed. */}
         <form
-          className="flex items-center gap-2"
+          className="sticky bottom-3 z-20 flex items-center gap-2 rounded-full bg-stone-50/95 p-1 shadow-card backdrop-blur sm:static sm:bg-transparent sm:p-0 sm:shadow-none"
           onSubmit={(e) => {
             e.preventDefault();
             props.onRefine(tweak);
@@ -704,7 +794,7 @@ function PreviewPanel(props: {
             Update
           </button>
         </form>
-        <div className="flex items-center justify-between pt-1">
+        <div className="flex flex-col-reverse items-stretch gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
             onClick={props.onBack}
@@ -712,7 +802,7 @@ function PreviewPanel(props: {
           >
             ← Edit the full request instead
           </button>
-          <Button variant="accent" onClick={props.onConfirm} disabled={props.busy || totalActions === 0}>
+          <Button variant="accent" onClick={props.onConfirm} disabled={props.busy || totalActions === 0} className="w-full sm:w-auto">
             {props.busy ? "Working…" : proposal.slots.length > 0 ? "Confirm & create" : "Confirm"}
           </Button>
         </div>
@@ -752,9 +842,10 @@ function CreatedPanel(props: { created: ConfirmResponse; onReset: () => void }) 
   // the confirm response (known facts, no model call, nothing to hallucinate).
   const donePieces: string[] = [];
   if (first) {
+    const times = created.slots.map((slot) => formatSlotTime(slot.startsAt));
     donePieces.push(
       `${slotCount === 1 ? "one viewing" : `${slotCount} viewings`} at ${first.property.name}, ` +
-        `starting ${formatSlotTime(first.startsAt)}`
+        (slotCount === 1 ? times[0] : `at ${times.join(", ")}`)
     );
   }
   if (created.cancelled?.length) {
@@ -789,7 +880,7 @@ function CreatedPanel(props: { created: ConfirmResponse; onReset: () => void }) 
           <p className="text-[15px] leading-relaxed text-stone-700">{summary}</p>
         </div>
       </div>
-      <div className="space-y-5 pl-10">
+      <div className="space-y-5 sm:pl-10">
         {created.slots.map((slot) => (
           <SlotInvitations
             key={slot.id}
@@ -822,7 +913,8 @@ function SlotInvitations(props: {
     () => savedDrafts.get(props.slotId)?.drafts ?? {}
   );
   const [streaming, setStreaming] = useState<Set<string>>(new Set());
-  const [sent, setSent] = useState<Record<string, boolean>>(() => savedDrafts.get(props.slotId)?.sent ?? {});
+  const [sent, setSent] = useState<Record<string, string>>(() => savedDrafts.get(props.slotId)?.sent ?? {});
+  const [failed, setFailed] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -835,6 +927,7 @@ function SlotInvitations(props: {
   async function handleDraft() {
     setBusy(true);
     setError(null);
+    setFailed(new Set());
     const leadIds = props.invitations.map((inv) => inv.lead.id);
     const appendForLead = (leadId: string, text: string) => {
       const invId = invitationByLead.get(leadId);
@@ -861,7 +954,9 @@ function SlotInvitations(props: {
           stopStreaming(event.leadId);
         }
         if (event.type === "error") {
-          setError(event.message);
+          const invId = invitationByLead.get(event.leadId);
+          if (invId) setFailed((prev) => new Set(prev).add(invId));
+          setError("One or more drafts need attention. Retry them individually or write the message manually.");
           stopStreaming(event.leadId);
         }
       });
@@ -882,6 +977,31 @@ function SlotInvitations(props: {
     }
   }
 
+  async function handleRetry(invitationId: string, leadId: string) {
+    setBusy(true);
+    setError(null);
+    setStreaming((prev) => new Set(prev).add(invitationId));
+    try {
+      const result = await draftMessages({ slotId: props.slotId, leadIds: [leadId] });
+      setDrafts((prev) => ({ ...prev, [invitationId]: result.drafts[0]?.message ?? "" }));
+      setFailed((prev) => {
+        const next = new Set(prev);
+        next.delete(invitationId);
+        return next;
+      });
+    } catch (err) {
+      setFailed((prev) => new Set(prev).add(invitationId));
+      setError(err instanceof ApiError ? err.message : "Retry failed — you can still write this message manually.");
+    } finally {
+      setStreaming((prev) => {
+        const next = new Set(prev);
+        next.delete(invitationId);
+        return next;
+      });
+      setBusy(false);
+    }
+  }
+
   async function handleApprove(invitationId: string) {
     const message = drafts[invitationId];
     if (!message) return;
@@ -889,7 +1009,7 @@ function SlotInvitations(props: {
     setError(null);
     try {
       await approveInvitation(invitationId, message);
-      setSent((prev) => ({ ...prev, [invitationId]: true }));
+      setSent((prev) => ({ ...prev, [invitationId]: new Date().toISOString() }));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Approve failed — try again.");
     } finally {
@@ -897,18 +1017,39 @@ function SlotInvitations(props: {
     }
   }
 
+  async function handleApproveAll() {
+    const ready = props.invitations.filter((inv) => !sent[inv.id] && (drafts[inv.id]?.trim().length ?? 0) >= 10);
+    if (ready.length === 0) return;
+    setBusy(true);
+    setError(null);
+    const results = await Promise.allSettled(ready.map((inv) => approveInvitation(inv.id, drafts[inv.id]!)));
+    const approvedAt = new Date().toISOString();
+    setSent((prev) => ({
+      ...prev,
+      ...Object.fromEntries(ready.filter((_, i) => results[i]?.status === "fulfilled").map((inv) => [inv.id, approvedAt])),
+    }));
+    if (results.some((result) => result.status === "rejected")) {
+      setError("Some invitations couldn't be approved. The remaining drafts are still here to retry.");
+    }
+    setBusy(false);
+  }
+
   const hasDrafts = Object.keys(drafts).length > 0;
+  const approvedCount = props.invitations.filter((inv) => Boolean(sent[inv.id])).length;
+  const readyCount = props.invitations.filter(
+    (inv) => !sent[inv.id] && (drafts[inv.id]?.trim().length ?? 0) >= 10 && !streaming.has(inv.id)
+  ).length;
 
   return (
     <Card>
-      <div className="flex items-center gap-4">
+      <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
         <DateBlock iso={props.startsAt} />
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold">{props.title}</h3>
           <p className="mt-0.5 text-xs text-stone-500">{props.subtitle}</p>
         </div>
         {!hasDrafts && (
-          <Button variant="primary" onClick={handleDraft} disabled={busy || props.invitations.length === 0} className="px-3 py-1.5 text-xs">
+          <Button variant="primary" onClick={handleDraft} disabled={busy || props.invitations.length === 0} className="w-full px-3 py-1.5 text-xs sm:w-auto">
             {busy ? "Drafting…" : "Draft invitations with AI"}
           </Button>
         )}
@@ -916,11 +1057,24 @@ function SlotInvitations(props: {
 
       {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
 
+      {hasDrafts && (
+        <div className="mt-4 flex flex-col gap-2 rounded-xl bg-stone-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-semibold text-stone-700">
+            {approvedCount} of {props.invitations.length} invitations approved
+          </p>
+          {readyCount > 1 && (
+            <Button variant="primary" onClick={handleApproveAll} disabled={busy} className="w-full px-3 py-1.5 text-xs sm:w-auto">
+              {busy ? "Approving…" : `Approve all ${readyCount} ready drafts`}
+            </Button>
+          )}
+        </div>
+      )}
+
       {props.invitations.map((inv) => {
         const isStreaming = streaming.has(inv.id);
         return (
           <div key={inv.id} className="mt-4 border-t border-stone-100 pt-4">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <Avatar name={inv.lead.name} />
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-2 text-sm font-medium">
@@ -932,14 +1086,26 @@ function SlotInvitations(props: {
               {sent[inv.id] ? (
                 <Badge tone="green">Sent ✓</Badge>
               ) : hasDrafts && !isStreaming ? (
-                <Button
-                  variant="accent"
-                  onClick={() => handleApprove(inv.id)}
-                  disabled={busy || !drafts[inv.id]}
-                  className="px-3 py-1.5 text-xs"
-                >
-                  Approve & send
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {failed.has(inv.id) && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => handleRetry(inv.id, inv.lead.id)}
+                      disabled={busy}
+                      className="border border-stone-200 px-3 py-1.5 text-xs"
+                    >
+                      Retry AI draft
+                    </Button>
+                  )}
+                  <Button
+                    variant="accent"
+                    onClick={() => handleApprove(inv.id)}
+                    disabled={busy || (drafts[inv.id]?.trim().length ?? 0) < 10}
+                    className="px-3 py-1.5 text-xs"
+                  >
+                    Approve & send
+                  </Button>
+                </div>
               ) : null}
             </div>
 
@@ -960,16 +1126,51 @@ function SlotInvitations(props: {
             )}
 
             {sent[inv.id] && (
-              <p className="mt-2 text-xs text-stone-500">
-                Invite link:{" "}
-                <a href={`/invite/${inv.id}`} className="font-medium text-emerald-800 underline underline-offset-2">
-                  {window.location.origin}/invite/{inv.id}
-                </a>
-              </p>
+              <SentInvitationActions invitationId={inv.id} sentAt={sent[inv.id]!} />
             )}
           </div>
         );
       })}
     </Card>
+  );
+}
+
+function SentInvitationActions(props: { invitationId: string; sentAt: string }) {
+  const [copied, setCopied] = useState(false);
+  const path = `/invite/${props.invitationId}`;
+  const url = `${window.location.origin}${path}`;
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 rounded-xl bg-emerald-50/60 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-xs text-stone-500">
+        Sent {new Date(props.sentAt).toLocaleTimeString("en-IE", { hour: "2-digit", minute: "2-digit" })}
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <a
+          href={path}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:border-emerald-700/40"
+        >
+          Preview invitation
+        </a>
+        <button
+          type="button"
+          onClick={copyLink}
+          className="rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 transition hover:border-emerald-700/40 hover:text-emerald-800"
+        >
+          {copied ? "Link copied ✓" : "Copy invite link"}
+        </button>
+      </div>
+    </div>
   );
 }
