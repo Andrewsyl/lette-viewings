@@ -32,11 +32,45 @@ export interface ProposedSlot {
   maxAttendees: number;
 }
 
+/** A question the admin must answer before anything is created. When the answer set is
+ *  small and discrete, `options` lets the UI render one-tap answer chips; `multiple`
+ *  marks questions where several options can be picked together (e.g. which leads),
+ *  turning the chips into toggles. */
+export interface ClarificationQuestion {
+  question: string;
+  options?: string[];
+  multiple?: boolean;
+}
+
+/** An existing viewing moved to a new date/time via natural language. */
+export interface ProposedReschedule {
+  slotId: string;
+  /** YYYY-MM-DD */
+  date: string;
+  /** HH:MM 24h */
+  startTime: string;
+}
+
 export interface SlotProposal {
   slots: ProposedSlot[];
   inviteeLeadIds: string[];
+  /** Existing viewings the admin asked to cancel — ids from the grounded booked list. */
+  cancelSlotIds?: string[];
+  /** Existing viewings the admin asked to move. */
+  reschedules?: ProposedReschedule[];
+  /** Conversational answer for requests that aren't scheduling instructions ("what's
+   *  booked Tuesday?", "can you delete viewings?") — rendered as the AI's turn in the
+   *  thread. Only meaningful when the proposal contains no actions or questions. */
+  reply?: string;
+  /** The start–end range (HH:MM) the admin's words allow ("afternoon" → 13:00–17:00).
+   *  The clash repair may move slots freely inside it but never outside — going outside
+   *  the window is a question for the admin, not a repair. */
+  window?: { earliest: string; latest: string };
   /** Questions the admin must answer when the input was ambiguous. Non-empty ⇒ nothing should be created yet. */
-  clarifications: string[];
+  clarifications: ClarificationQuestion[];
+  /** Interpretations the AI made that the admin should be able to check at a glance —
+   *  vague words resolved ("afternoon" → from 14:00) and defaults applied. */
+  assumptions: string[];
   /** Machine-usable typo fixes accompanying a "did you mean…?" clarification — the UI
    *  renders each as a one-tap correction that rewrites the request and re-parses. */
   corrections?: { from: string; to: string }[];
@@ -47,6 +81,9 @@ export interface ParseResponse {
   /** Denormalised previews so the UI can render names, not ids */
   properties: PropertySummary[];
   leads: LeadSummary[];
+  /** Current details of any existing viewings referenced by cancelSlotIds/reschedules,
+   *  so the preview can show what's about to be cancelled or moved. */
+  existingSlots?: SlotWithCounts[];
 }
 
 // ---------- Confirm (phase 2: the admin-approved payload is what persists) ----------
@@ -54,6 +91,8 @@ export interface ParseResponse {
 export interface ConfirmRequest {
   slots: ProposedSlot[];
   inviteeLeadIds: string[];
+  cancelSlotIds?: string[];
+  reschedules?: ProposedReschedule[];
 }
 
 export interface SlotWithCounts {
@@ -68,6 +107,10 @@ export interface SlotWithCounts {
 export interface ConfirmResponse {
   slots: SlotWithCounts[];
   invitations: InvitationSummary[];
+  /** Viewings removed by this confirm (details captured before deletion). */
+  cancelled?: SlotWithCounts[];
+  /** Viewings moved by this confirm, with their new times. */
+  moved?: SlotWithCounts[];
 }
 
 // ---------- Invitations ----------
@@ -129,6 +172,11 @@ export type DraftStreamEvent =
   | { type: "done"; leadId: string; message: string }
   | { type: "error"; leadId: string; message: string }
   | { type: "complete" };
+
+/** The stubbed session: who the admin is (used to greet them by name). */
+export interface MeResponse {
+  admin: { id: string; name: string; email: string };
+}
 
 export interface ApiError {
   message: string;

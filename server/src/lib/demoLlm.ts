@@ -38,16 +38,40 @@ function editDistance(a: string, b: string): number {
   return dp[a.length]![b.length]!;
 }
 
-function nextTuesday(): string {
+const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+// Honour the day the admin actually named (or answered via a clarification chip);
+// Tuesday is only the fallback for requests that never mention a day.
+function nextMentionedDay(text: string): string {
   const d = new Date();
-  const day = d.getDay(); // 0 Sun ... 2 Tue
-  const delta = ((2 - day + 7) % 7) || 7;
+  if (/\btomorrow\b/.test(text)) {
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }
+  const mentioned = WEEKDAYS.findIndex((day) => text.includes(day));
+  const target = mentioned === -1 ? 2 : mentioned;
+  const delta = ((target - d.getDay() + 7) % 7) || 7;
   d.setDate(d.getDate() + delta);
   return d.toISOString().slice(0, 10);
 }
 
 function firstNameOf(label: string): string {
   return label.split(" ")[0] ?? "there";
+}
+
+// The grounding prompt lists existing viewings as "- <id> | <propertyId>: ..." — read
+// them back out so demo cancellations reference real ids and pass validation.
+function extractBooked(system: string): { id: string; propertyId: string }[] {
+  const lines = system.split("\n");
+  const start = lines.findIndex((l) => l.startsWith("ALREADY BOOKED"));
+  if (start === -1) return [];
+  const out: { id: string; propertyId: string }[] = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    const match = /^- (\S+) \| ([^:]+):/.exec(lines[i] ?? "");
+    if (!match) break;
+    out.push({ id: match[1]!, propertyId: match[2]!.trim() });
+  }
+  return out;
 }
 
 export class DemoLlmClient implements LlmClient {
@@ -62,20 +86,76 @@ export class DemoLlmClient implements LlmClient {
     const properties = extractIds(req.system, "PROPERTIES");
     const leads = extractIds(req.system, "LEADS");
 
-    // Vague timing → ask, don't guess (mirrors the real prompt's instruction).
-    if (/sometime|whenever|at some point|next week(?!.*(mon|tue|wed|thu|fri|sat|sun))/.test(text)) {
+    // Vague timing → ask, don't guess (mirrors the real prompt's instruction). Offering
+    // the weekdays as options means one tap answers the question — and once a day word
+    // is present (typed or tapped), this branch no longer fires.
+    const mentionsDay = WEEKDAYS.some((day) => text.includes(day)) || /\btomorrow\b|\btoday\b/.test(text);
+    if (!mentionsDay && /sometime|whenever|at some point|next week/.test(text)) {
       return {
         slots: [],
         inviteeLeadIds: [],
-        clarifications: ["Which day would you like the viewings? (demo mode needs a specific day too)"],
+        clarifications: [
+          {
+            question: "Which day would you like the viewings?",
+            options: ["Monday", "Tuesday", "Wednesday", "Thursday"],
+          },
+        ],
+        assumptions: [],
       };
+    }
+
+    // Cancel-by-NL, demo edition: "cancel ... <property>" cancels that property's
+    // upcoming viewings (all of them — the live model targets specific ones).
+    if (/\bcancel\b/.test(text)) {
+      const target = properties.find((p) =>
+        text.includes(p.label.split("—")[0]!.trim().toLowerCase().slice(0, 8))
+      );
+      const booked = extractBooked(req.system).filter((b) => !target || b.propertyId === target.id);
+      const targetName = target?.label.split("—")[0]!.trim();
+      if (booked.length === 0) {
+        return {
+          slots: [],
+          inviteeLeadIds: [],
+          clarifications: [
+            { question: `There are no upcoming viewings${targetName ? ` at ${targetName}` : ""} to cancel.` },
+          ],
+          assumptions: [],
+        };
+      }
+      return {
+        slots: [],
+        inviteeLeadIds: [],
+        clarifications: [],
+        cancelSlotIds: booked.map((b) => b.id),
+        assumptions: [
+          `Demo mode cancels every upcoming viewing${targetName ? ` at ${targetName}` : ""} — the live model can target specific ones.`,
+        ],
+      };
+    }
+
+    // Questions and queries get a spoken answer, not an empty proposal. (Explicit
+    // "cancel …" was handled above, so a polite instruction still acts.)
+    if (/\b(list|show|delete)\b|\bcan you\b|\bwhat\b|\?\s*$/.test(text)) {
+      const booked = extractBooked(req.system);
+      const reply =
+        booked.length > 0
+          ? `There ${booked.length === 1 ? "is 1 upcoming viewing" : `are ${booked.length} upcoming viewings`} booked — the Viewings page has the full list. ` +
+            `I can create, cancel or move them from here: try "cancel Tuesday's viewings at 22 Maple Street" or "move the 5pm viewing to 7pm".`
+          : `There are no upcoming viewings yet. Describe what you need — property, day, who to invite — and I'll set them up.`;
+      return { slots: [], inviteeLeadIds: [], clarifications: [], assumptions: [], reply };
     }
 
     // Property: first one whose name appears in the text, else the first property.
     const property =
       properties.find((p) => text.includes(p.label.split("—")[0]!.trim().toLowerCase().slice(0, 8))) ??
       properties[0];
-    if (!property) return { slots: [], inviteeLeadIds: [], clarifications: ["No properties exist yet."] };
+    if (!property)
+      return {
+        slots: [],
+        inviteeLeadIds: [],
+        clarifications: [{ question: "No properties exist yet." }],
+        assumptions: [],
+      };
 
     // Leads: match on ANY name token — first name, surname, or full name — so
     // "invite Emma" works as well as "invite the Johnson lead". (Name tokens only:
@@ -133,29 +213,52 @@ export class DemoLlmClient implements LlmClient {
           unknown.push(`"${name}"`);
         }
       }
-      const clarifications = [...suggestions];
+      const clarifications: { question: string; options?: string[]; multiple?: boolean }[] =
+        suggestions.map((question) => ({ question }));
       if (unknown.length > 0) {
-        clarifications.push(
-          `I couldn't find ${unknown.join(" or ")} in your leads — they may need to be added as a lead first.`
-        );
+        clarifications.push({
+          question: `I couldn't find ${unknown.join(" or ")} in your leads — they may need to be added as a lead first.`,
+        });
       }
       if (clarifications.length === 0) {
-        clarifications.push("Who should I invite? (Try a first name or surname from the Leads page.)");
+        // Options only when there's a real choice — the validation fence requires 2–6.
+        const names = leads.slice(0, 6).map((l) => l.label.split(" (")[0]!.trim());
+        clarifications.push({
+          question: "Who should I invite?",
+          ...(names.length >= 2 ? { options: names, multiple: true } : {}),
+        });
       }
       return {
         slots: [],
         inviteeLeadIds: [],
         clarifications: clarifications.slice(0, 5),
         corrections: corrections.slice(0, 5),
+        assumptions: [],
       };
     }
 
-    const count = Math.min(parseInt(/(\d+)\s*(?:x\s*)?(?:viewing|slot)/.exec(text)?.[1] ?? "3", 10) || 3, 6);
-    const duration = parseInt(/(\d+)[- ]?min/.exec(text)?.[1] ?? "30", 10) || 30;
-    const maxAttendees = parseInt(/max\s*(\d+)/.exec(text)?.[1] ?? "5", 10) || 5;
-    const startHour = /morning/.test(text) ? 9 : /evening/.test(text) ? 17 : 14;
+    const countMatch = /(\d+)\s*(?:x\s*)?(?:viewing|slot)/.exec(text)?.[1];
+    const durationMatch = /(\d+)[- ]?min/.exec(text)?.[1];
+    const maxMatch = /max\s*(\d+)/.exec(text)?.[1];
+    const count = Math.min(parseInt(countMatch ?? "3", 10) || 3, 6);
+    const duration = parseInt(durationMatch ?? "30", 10) || 30;
+    const maxAttendees = parseInt(maxMatch ?? "5", 10) || 5;
+    const timeWord = /morning/.test(text) ? "morning" : /evening/.test(text) ? "evening" : /afternoon/.test(text) ? "afternoon" : null;
+    const startHour = timeWord === "morning" ? 9 : timeWord === "evening" ? 17 : 14;
 
-    const date = nextTuesday();
+    // Every judgement call is surfaced, mirroring the real prompt's `assumptions` rule —
+    // spoken first-person sentences, because they render as the AI's own words in the
+    // preview bubble.
+    const startLabel = startHour === 9 ? "9am" : startHour === 17 ? "5pm" : "2pm";
+    const assumptions: string[] = [];
+    if (timeWord) assumptions.push(`I read "${timeWord}" as slots starting at ${startLabel}.`);
+    else assumptions.push(`You didn't mention a time of day, so I started at ${startLabel}.`);
+    if (!countMatch) assumptions.push("You didn't say how many, so I planned 3 viewings.");
+    if (!durationMatch) assumptions.push("I used the default 30-minute duration.");
+    if (!maxMatch) assumptions.push("I capped each at 5 people, the default.");
+    if (count > 1) assumptions.push("They're scheduled back-to-back.");
+
+    const date = nextMentionedDay(text);
     const slots = Array.from({ length: count }, (_, i) => {
       const minutes = startHour * 60 + i * duration;
       const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
@@ -163,7 +266,16 @@ export class DemoLlmClient implements LlmClient {
       return { propertyId: property.id, date, startTime: `${hh}:${mm}`, durationMins: duration, maxAttendees };
     });
 
-    return { slots, inviteeLeadIds: invitees.map((l) => l.id), clarifications: [] };
+    const window =
+      timeWord === "morning"
+        ? { earliest: "09:00", latest: "12:00" }
+        : timeWord === "evening"
+          ? { earliest: "17:00", latest: "20:00" }
+          : timeWord === "afternoon"
+            ? { earliest: "13:00", latest: "17:00" }
+            : { earliest: "13:00", latest: "19:00" };
+
+    return { slots, inviteeLeadIds: invitees.map((l) => l.id), clarifications: [], assumptions, window };
   }
 
   private draftInvitations(req: ToolCallRequest) {

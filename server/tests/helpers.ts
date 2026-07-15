@@ -71,5 +71,6 @@ export function validProposal() {
     ],
     inviteeLeadIds: ["lead_johnson", "lead_patel"],
     clarifications: [],
+    window: { earliest: "13:00", latest: "17:00" },
   };
 }

@@ -17,6 +17,7 @@ router.post("/parse", async (req, res, next) => {
       proposal: result.proposal,
       properties: result.properties,
       leads: result.leads,
+      ...(result.existingSlots ? { existingSlots: result.existingSlots } : {}),
     };
     res.json(response);
   } catch (err) {

@@ -80,6 +80,52 @@ describe("API", () => {
         });
       expect(res.status).toBe(422);
     });
+
+    it("cancels viewings (and their invitations) from the approved payload", async () => {
+      const slot = await prisma.viewingSlot.create({
+        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T15:00:00`), durationMins: 30, maxAttendees: 5 },
+      });
+      await prisma.invitation.create({ data: { slotId: slot.id, leadId: "lead_johnson" } });
+
+      const res = await request(app)
+        .post("/api/slots/confirm")
+        .send({ slots: [], inviteeLeadIds: [], cancelSlotIds: [slot.id] });
+
+      expect(res.status).toBe(201);
+      expect(res.body.cancelled).toHaveLength(1);
+      expect(res.body.cancelled[0].id).toBe(slot.id);
+      expect(await prisma.viewingSlot.count({ where: { id: slot.id } })).toBe(0);
+      expect(await prisma.invitation.count({ where: { slotId: slot.id } })).toBe(0);
+    });
+
+    it("moves a viewing to its new time from the approved payload", async () => {
+      const slot = await prisma.viewingSlot.create({
+        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T10:00:00`), durationMins: 30, maxAttendees: 5 },
+      });
+
+      const res = await request(app)
+        .post("/api/slots/confirm")
+        .send({
+          slots: [],
+          inviteeLeadIds: [],
+          reschedules: [{ slotId: slot.id, date: futureDate(), startTime: "16:00" }],
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.moved).toHaveLength(1);
+      const updated = await prisma.viewingSlot.findUniqueOrThrow({ where: { id: slot.id } });
+      expect(updated.startsAt.getTime()).toBe(new Date(`${futureDate()}T16:00:00`).getTime());
+    });
+
+    it("rejects cancel/move of unknown viewings and empty payloads", async () => {
+      const unknown = await request(app)
+        .post("/api/slots/confirm")
+        .send({ slots: [], inviteeLeadIds: [], cancelSlotIds: ["slot_forged"] });
+      expect(unknown.status).toBe(422);
+
+      const empty = await request(app).post("/api/slots/confirm").send({ slots: [], inviteeLeadIds: [] });
+      expect(empty.status).toBe(422);
+    });
   });
 
   describe("invitation flow", () => {
