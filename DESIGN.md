@@ -1,7 +1,7 @@
 # Design — AI-Powered Viewing Slot Invitations
 
 Written before the first line of application code. This documents the decisions and the
-reasoning; the READMEs cover setup.
+reasoning; the READMEs cover setup, and PROCESS.md covers how AI tools were used to build it.
 
 ## The shape of the problem
 

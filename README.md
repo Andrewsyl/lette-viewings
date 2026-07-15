@@ -6,7 +6,8 @@ in, with capacity enforced and alternative times offered when a slot is full.
 
 The design principle throughout: **the LLM proposes, a human approves, deterministic code
 enforces.** Model output never reaches the database or an invitee without passing a schema
-fence and a human gate. `DESIGN.md` has the reasoning.
+fence and a human gate. `DESIGN.md` has the reasoning; `PROCESS.md` logs how AI tooling
+built it — including what it got wrong and how that was caught.
 
 ## Quick start
 
@@ -43,7 +44,7 @@ is visibly labelled as demo output so it can't be mistaken for the real model.
 
 ## Product decisions
 
-A few deliberate calls a reviewer might otherwise read as omissions:
+The calls that shaped the admin experience — each deliberate:
 
 - **"Conversational" = a light thread over a stateless parse, not a chat app.** The
   exchange builds visibly — the admin's request, the AI's clarifying questions, one-tap or
@@ -70,12 +71,13 @@ A few deliberate calls a reviewer might otherwise read as omissions:
 | `web/` | Vite + React + Tailwind. Admin composer + invitee page. [README](web/README.md) |
 | `shared/types.ts` | The API contract, imported by both sides |
 | `DESIGN.md` | Architecture decisions and trade-offs, written before the code |
+| `PROCESS.md` | How AI coding tools were used — the working rules, the day log, and what the AI got wrong |
 
 ## What was deliberately cut (Pareto), and what I'd do with more time
 
 **Cut for scope, in the order I'd build them next:**
 
-1. **Postgres + database-level capacity guarantee.** SQLite keeps reviewer setup at zero;
+1. **Postgres + database-level capacity guarantee.** SQLite keeps setup at zero;
    the transactional re-count closes the race there (proven by a concurrent-accept test).
    Multi-instance production needs the check *in* the database — `SELECT ... FOR UPDATE`
    on the slot row, or a constraint/trigger that makes overfill impossible regardless of
