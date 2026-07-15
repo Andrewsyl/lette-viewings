@@ -18,7 +18,7 @@ describe("DemoLlmClient through the real parse pipeline", () => {
 
   it("produces a proposal that passes the full validation fence", async () => {
     const result = await parseSlotRequest(
-      "three 30-minute viewing slots for 22 Maple Street next Tuesday, max 5, invite Johnson and Patel",
+      "three 30-minute viewing slots for 22 Maple Street next Tuesday afternoon, max 5, invite Johnson and Patel",
       new DemoLlmClient()
     );
     expect(result.proposal.slots).toHaveLength(3);
@@ -75,7 +75,7 @@ describe("DemoLlmClient through the real parse pipeline", () => {
 
   it("does not mistake weekdays or property words in the invite clause for names", async () => {
     const result = await parseSlotRequest(
-      "two slots next Tuesday, invite Johnson on Tuesday at Maple Street",
+      "two slots next Tuesday afternoon, invite Johnson on Tuesday at Maple Street",
       new DemoLlmClient()
     );
     expect(result.proposal.clarifications).toHaveLength(0);
@@ -91,7 +91,7 @@ describe("DemoLlmClient through the real parse pipeline", () => {
 
   it("resolves once the vague request carries an answered clarification", async () => {
     const answered =
-      'some viewings next week sometime for Maple Street, invite Johnson\n\nClarification — "Which day would you like the viewings?": Friday';
+      'some viewings next week sometime in the afternoon for Maple Street, invite Johnson\n\nClarification — "Which day would you like the viewings?": Friday';
     const result = await parseSlotRequest(answered, new DemoLlmClient());
     expect(result.proposal.clarifications).toHaveLength(0);
     expect(result.proposal.slots.length).toBeGreaterThan(0);

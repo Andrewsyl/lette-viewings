@@ -208,6 +208,14 @@ function buildProposalSchema(
   });
 }
 
+/** YYYY-MM-DD as it reads on a Dublin wall clock. toISOString() would give the UTC date,
+ *  which during Irish summer time is YESTERDAY between midnight and 1am Dublin — pairing
+ *  that with a Dublin weekday would hand the model a self-contradictory "today".
+ *  (en-CA is the locale whose date format is ISO-shaped.) Exported for tests. */
+export function dublinDateISO(d: Date): string {
+  return d.toLocaleDateString("en-CA", { timeZone: "Europe/Dublin" });
+}
+
 function buildSystemPrompt(
   now: Date,
   properties: { id: string; name: string; address: string }[],
@@ -219,21 +227,22 @@ function buildSystemPrompt(
   const calendar = Array.from({ length: 14 }, (_, i) => {
     const d = new Date(now.getTime() + (i + 1) * 24 * 60 * 60 * 1000);
     const weekday = d.toLocaleDateString("en-IE", { weekday: "long", timeZone: "Europe/Dublin" });
-    return `- ${weekday} ${d.toISOString().slice(0, 10)}`;
+    return `- ${weekday} ${dublinDateISO(d)}`;
   });
-  const today = now.toISOString().slice(0, 10);
+  const today = dublinDateISO(now);
   const todayName = now.toLocaleDateString("en-IE", { weekday: "long", timeZone: "Europe/Dublin" });
   const timeOpts = { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Europe/Dublin" } as const;
+  const nowTime = now.toLocaleTimeString("en-IE", timeOpts);
   const bookedLines = upcoming.map((s) => {
     const end = new Date(s.startsAt.getTime() + s.durationMins * 60_000);
     const day = s.startsAt.toLocaleDateString("en-IE", { weekday: "long", timeZone: "Europe/Dublin" });
-    return `- ${s.id} | ${s.propertyId}: ${day} ${s.startsAt.toISOString().slice(0, 10)} ${s.startsAt.toLocaleTimeString("en-IE", timeOpts)}–${end.toLocaleTimeString("en-IE", timeOpts)}`;
+    return `- ${s.id} | ${s.propertyId}: ${day} ${dublinDateISO(s.startsAt)} ${s.startsAt.toLocaleTimeString("en-IE", timeOpts)}–${end.toLocaleTimeString("en-IE", timeOpts)}`;
   });
   return [
     "You are Vera, Lette's scheduling assistant, working alongside a property management team.",
     "You speak in the first person — warm, brisk, plain English. Your questions and assumptions should read like a helpful colleague, never like a system.",
     "You parse the property manager's natural-language request into structured viewing slots.",
-    `Today is ${todayName} ${today} (Europe/Dublin). All dates are in the future relative to today.`,
+    `Today is ${todayName} ${today} and the current time is ${nowTime} (Europe/Dublin). Every viewing must start in the future. A viewing 'today' is fine as long as its time is after ${nowTime}; a time earlier than that today is in the past, so ask what the admin meant.`,
     "",
     "ALREADY BOOKED — upcoming viewings that exist (do not double-book on top of these):",
     ...(bookedLines.length > 0 ? bookedLines : ["- none yet"]),
@@ -251,6 +260,7 @@ function buildSystemPrompt(
     "- The request text may hold several turns of one exchange: the original request first, then lines like 'Clarification — \"<question>\": <answer>' and follow-up messages appended below it. The LAST line is what the admin just said — respond to that, treating everything above as context you have already handled. Never re-answer an earlier line, never repeat a previous reply, and never claim the admin didn't specify something they answered in a clarification line — an answered question is settled.",
     "- Never invent property or lead ids. If the request names someone not in the list, add a clarification.",
     "- Cancelling or moving existing viewings: use `cancelSlotIds` / `reschedules` with ids from ALREADY BOOKED. Touch exactly what the admin asked — never more. If their reference matches nothing, or could match several viewings, ask via clarifications (offer the candidates as options). A cancel/move request creates no new slots unless the admin also asked for them.",
+    "- A reschedule changes only a viewing's date and time, NEVER its property. If the admin asks to move a viewing to a DIFFERENT property ('move the Maple Street viewing to Riverpoint'), that is not a reschedule — it's cancelling one and creating another. Don't split it into an unrelated reschedule plus a new slot; ask via clarifications to confirm ('Moving to a different property means cancelling the 2pm at 22 Maple Street and creating a new viewing at Riverpoint — shall I do that?').",
     "- NOTHING happens until the admin confirms the preview. Phrase assumptions as intentions ('I'll cancel the three Tuesday viewings'), never as completed actions ('are cancelled') — claiming something happened before it did destroys trust.",
     "- If the request is a question or not a scheduling instruction ('can you delete viewings?', 'what's booked on Tuesday?', 'list viewings'), answer it in `reply` — grounded in ALREADY BOOKED, short and helpful, mentioning what to say next ('Yes — just tell me which viewings to cancel'). Propose nothing and ask nothing alongside it.",
     "- Exception: when the latest line asks a question but an instruction from earlier lines still stands ('wait, will this send two invites to the same person?'), answer the question in `reply` AND keep proposing — the answer belongs in `reply`, never in assumptions (assumptions are for your interpretations, not for answering the admin). Never let a question silently drop the plan, and never let the plan silently drop the question.",
@@ -266,10 +276,10 @@ function buildSystemPrompt(
     "- If the request contradicts itself, NEVER silently pick one reading. 'Saturday the 27th' when the CALENDAR shows the 27th is a Monday gets a question naming both readings, with both as options: 'Just to check — next Saturday is the 25th, and the 27th is a Monday. Which did you mean?' options ['Saturday 25 July', 'Monday 27 July'].",
     "- Always return `window`: the start–end range the admin's words allow. Slots must start and end inside it — the system moves slots within the window to avoid clashes, but never outside it.",
     "- When ALREADY BOOKED has entries at the requested property on the requested day, don't state exact start times in assumptions (they may be adjusted to avoid clashes) — describe the window instead ('three 30-minute viewings in the afternoon').",
-    "- A time that is simply unmentioned is NOT a question: default to afternoon starting 14:00 and record it in assumptions. Only ask about time when the admin's own wording makes the time ambiguous.",
-    "- Never output a slot in `slots` that overlaps an ALREADY BOOKED viewing at the same property — a clashing slot must not reach the preview. When the admin left you room to move, schedule around the existing viewings and say so in assumptions. When they asked for a specific clashing time, leave the slot out and ask via `clarifications`, offering the nearest free times as options. A clash question belongs in clarifications, never in assumptions.",
+    "- Time is the one detail worth asking about. If the admin gives NO time at all — no clock time AND no part of day (morning/afternoon/evening) — ASK for a start time via `clarifications` ('What time should the first viewing start?'), open-ended with NO options (any time is valid). Never invent a time or default it to 2pm — a viewing at the wrong time is a real problem, unlike a wrong duration. But if they gave a specific time ('2pm', 'half past ten') or a part of day ('Friday afternoon'), use it and do NOT ask.",
+    "- Never output a slot in `slots` that overlaps an ALREADY BOOKED viewing at the same property — a clashing slot must not reach the preview. When the admin left you room to move (a range like 'afternoon', or several viewings across a day), schedule around the existing viewings and say so in assumptions. But when the admin named ONE specific start time and it is already booked ('a viewing at 9am' when 9am is taken), do NOT silently reschedule it to a nearby free time — leave `slots` empty and ask via `clarifications`, offering the nearest free times as options ('9am is booked at Riverpoint that morning — the nearest free time is 9:40am. Take that, or another time?'). The admin chose that time; moving it 40 minutes is their call, not yours. A clash question belongs in clarifications, never in assumptions.",
     "- Ask ONE clarifying question per turn — the most blocking one first (property, then day, then who to invite, then times). The admin's answer comes back appended to the request, and you can ask the next question then. Never stack multiple questions in one turn.",
-    "- Every question whose answer set is small MUST include `options` (2–6) so the admin can answer with one tap: weekday choices for a vague date, 'morning'/'afternoon'/'evening' for a vague time, and the lead names from the roster when asking who to invite. Omit options only for genuinely open-ended questions. Set `multiple: true` when several options can be picked together (who to invite); the answer may then be a comma-separated list.",
+    "- Every question whose answer set is small MUST include `options` (2–6) so the admin can answer with one tap: weekday choices for a vague date, and the lead names from the roster when asking who to invite. Omit options for genuinely open-ended questions — including 'what time?', where any clock time is valid, so ask it as free text with no options. Set `multiple: true` when several options can be picked together (who to invite); the answer may then be a comma-separated list.",
     "- 'afternoon' means slots between 13:00 and 17:00; 'morning' 09:00–12:00; 'evening' 17:00–20:00.",
     "- Multiple slots in one afternoon should be consecutive unless told otherwise.",
     "- Defaults when unstated: duration 30 minutes, maxAttendees 5 — do NOT ask about these.",
@@ -288,6 +298,19 @@ function buildSystemPrompt(
 // interrogating the admin about clashes we can solve ourselves is just rude.
 
 type BookedSlot = { id: string; propertyId: string; startsAt: Date; durationMins: number };
+
+// Time is the one detail we refuse to guess: a viewing at the wrong hour is a real
+// problem, so an unmentioned time is a question, not a default (user decision). The prompt
+// asks for this, but Haiku follows it only ~half the time and schedules at 2pm anyway — so
+// the guarantee is enforced here. Returns true if the request text carries ANY time
+// signal (a clock time or a part of day); if it doesn't and the model still produced
+// slots, we clear them and ask. Deliberately broad, to avoid asking when a time really
+// was given in some phrasing.
+const TIME_SIGNAL =
+  /\b(\d{1,2}\s*(?::|\.)?\s*\d{0,2}\s*(?:am|pm|a\.m\.|p\.m\.)|\d{1,2}:\d{2}|\d{1,2}\s*o'?clock|morning|afternoon|evening|tonight|noon|midday|midnight|lunchtime|breakfast|dawn|dusk|first thing|(?:half|quarter)\s+(?:past|to|\w+)|half\s+\w+)\b/i;
+function hasTimeSignal(text: string): boolean {
+  return TIME_SIGNAL.test(text);
+}
 
 // Naive local time by design (see DESIGN.md) — same construction the Zod refine uses.
 function slotStart(slot: { date: string; startTime: string }): Date {
@@ -334,7 +357,14 @@ function repairClashes(
   properties: { id: string; name: string }[]
 ): SlotProposal {
   const reschedules = proposal.reschedules ?? [];
-  if (proposal.clarifications.length > 0 || (proposal.slots.length === 0 && reschedules.length === 0)) {
+  // An open question means nothing is proposed yet: the thread shows the question and
+  // discards any slots the model floated alongside it. Clear them here so the response
+  // can never carry a half-baked plan (even two slots self-clashing at the same time)
+  // behind a clarification — the admin answers, and the re-parse proposes for real.
+  if (proposal.clarifications.length > 0) {
+    return { ...proposal, slots: [] };
+  }
+  if (proposal.slots.length === 0 && reschedules.length === 0) {
     return proposal;
   }
 
@@ -455,7 +485,7 @@ function repairClashes(
   for (const key of movedAt) {
     const [propertyId, date] = key.split("|") as [string, string];
     const dayRanges = booked
-      .filter((b) => b.propertyId === propertyId && b.startsAt.toISOString().slice(0, 10) === new Date(`${date}T12:00:00`).toISOString().slice(0, 10))
+      .filter((b) => b.propertyId === propertyId && dublinDateISO(b.startsAt) === date)
       .map((b) => ({ start: b.startsAt, end: new Date(b.startsAt.getTime() + b.durationMins * 60_000) }));
     if (dayRanges.length === 0) continue;
     const merged = mergeRanges(dayRanges);
@@ -544,23 +574,33 @@ export async function parseSlotRequest(text: string, llm?: LlmClient): Promise<P
   };
   let raw = await invokeWithValidation(invokeOpts);
 
-  // Soft guarantee, enforced by retry: a follow-up question mid-exchange ("wait, will
-  // this send two invites to the same person?") must get a spoken answer, not narration
-  // buried in assumptions. The prompt asks for `reply` here, but Haiku only complies
-  // about half the time — so when the latest line is a question and no reply came back,
-  // ask once more with that as the correction. Soft, unlike the fence above: a valid
-  // plan missing its answer ships anyway rather than failing the whole request.
+  // Soft guarantee, enforced by retry: Vera must never say literally nothing. Two shapes
+  // of silence trigger it — (a) a follow-up question mid-exchange ("wait, will this send
+  // two invites to the same person?") that got a plan but no spoken answer, and (b) a
+  // total dead end (no slots, no cancels, no moves, no question, no reply — e.g. the
+  // model shrugged at "what's booked this week?"). The prompt asks for `reply` in both,
+  // but Haiku complies only about half the time, so the retry makes `reply` a required
+  // field of the tool schema — the forced tool call then physically must answer. Soft,
+  // unlike the fence above: if the retry fails, the original response ships unchanged.
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   const latest = lines[lines.length - 1] ?? "";
   const isFollowUpQuestion =
     lines.length > 1 && /\?\s*$/.test(latest) && !latest.startsWith("Clarification —");
   const actionCount = raw.slots.length + raw.cancelSlotIds.length + raw.reschedules.length;
-  if (isFollowUpQuestion && !raw.reply && raw.clarifications.length === 0 && actionCount > 0) {
+  const noReply = !raw.reply?.trim();
+  const unansweredFollowUp = isFollowUpQuestion && actionCount > 0 && raw.clarifications.length === 0;
+  const deadEnd = actionCount === 0 && raw.clarifications.length === 0;
+  if (noReply && (unansweredFollowUp || deadEnd)) {
+    const correction = deadEnd
+      ? `(Correction: your response was empty — no viewings, no question, no answer. The admin ` +
+        `said ${JSON.stringify(latest)}. If that's a question or request to see viewings, answer it ` +
+        `in \`reply\`, grounded in the ALREADY BOOKED list. Do not return nothing.)`
+      : `(Correction: you proposed correctly but did not answer the admin's question ` +
+        `${JSON.stringify(latest)} — put the answer in the \`reply\` field, keeping the ` +
+        `proposal unchanged. Do not fold the answer into assumptions.)`;
     try {
       const second = await invokeWithValidation({
         ...invokeOpts,
-        // A prompt nudge alone still gets ignored — the retry makes `reply` a required
-        // field of the tool schema, so the forced tool call physically must answer.
         tool: {
           ...TOOL,
           inputSchema: {
@@ -568,16 +608,25 @@ export async function parseSlotRequest(text: string, llm?: LlmClient): Promise<P
             required: [...(TOOL.inputSchema.required as string[]), "reply"],
           },
         },
-        user:
-          `${text}\n\n` +
-          `(Correction: you proposed correctly but did not answer the admin's question ` +
-          `${JSON.stringify(latest)} — put the answer in the \`reply\` field, keeping the ` +
-          `proposal unchanged. Do not fold the answer into assumptions.)`,
+        user: `${text}\n\n${correction}`,
       });
       if (second.reply) raw = second;
     } catch {
       // The first attempt was valid — a failed retry never makes the response worse.
     }
+  }
+
+  // Enforce the no-guessed-time rule in code: if the model proposed viewings but the
+  // request never gave a time, it defaulted one (usually 2pm) against instruction. Clear
+  // the slots and ask. Only for new viewings — cancels/moves reference existing times.
+  if (raw.slots.length > 0 && raw.clarifications.length === 0 && !hasTimeSignal(text)) {
+    raw = {
+      ...raw,
+      slots: [],
+      clarifications: [
+        { question: 'What time should the first viewing start? (e.g. "2pm", "10:30am")' },
+      ],
+    };
   }
 
   let proposal = repairClashes(raw, upcoming, properties);
@@ -598,6 +647,16 @@ export async function parseSlotRequest(text: string, llm?: LlmClient): Promise<P
     assumptions: proposal.assumptions.map(humanize),
     ...(proposal.reply ? { reply: humanize(proposal.reply) } : {}),
   };
+
+  // One question per turn, guaranteed in code. The prompt asks for it and orders
+  // clarifications most-blocking-first, but the model still sometimes stacks three
+  // ("which day?" + "what time?" + "who?") — overwhelming for a chat, and the thread is
+  // built to ask the next one after each answer anyway. The model and the repair fence
+  // never both add clarifications (repair bails when the model already asked), so keeping
+  // the first is always keeping the most-blocking one.
+  if (proposal.clarifications.length > 1) {
+    proposal = { ...proposal, clarifications: proposal.clarifications.slice(0, 1) };
+  }
 
   // Denormalise whatever existing viewings the proposal touches, so the preview can
   // show the admin exactly what's about to be cancelled or moved (and who accepted).

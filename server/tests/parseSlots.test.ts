@@ -15,7 +15,7 @@ describe("parseSlotRequest", () => {
 
   it("accepts a valid proposal and logs the call", async () => {
     const llm = new MockLlm([validProposal()]);
-    const result = await parseSlotRequest("three slots for Maple St", llm);
+    const result = await parseSlotRequest("three slots for Maple St at 2pm", llm);
 
     expect(result.proposal.slots).toHaveLength(2);
     expect(result.proposal.inviteeLeadIds).toEqual(["lead_johnson", "lead_patel"]);
@@ -28,7 +28,7 @@ describe("parseSlotRequest", () => {
 
   it("repairs once when the first output is garbage, and succeeds", async () => {
     const llm = new MockLlm([{ nonsense: true }, validProposal()]);
-    const result = await parseSlotRequest("slots please", llm);
+    const result = await parseSlotRequest("slots at 2pm please", llm);
 
     expect(result.proposal.slots).toHaveLength(2);
     expect(llm.requests).toHaveLength(2);
@@ -150,6 +150,51 @@ describe("parseSlotRequest", () => {
     expect(result.proposal.reply).toContain("one invitation per viewing");
   });
 
+  it("clears slots when the model returns a clarification alongside them (no plan behind a question)", async () => {
+    // The model sometimes floats slots — occasionally self-clashing — next to a question.
+    // A response with an open question must carry no slots.
+    const withBoth = {
+      slots: [
+        { propertyId: "prop_maple", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 },
+        { propertyId: "prop_maple", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 },
+      ],
+      inviteeLeadIds: [],
+      window: { earliest: "09:00", latest: "20:00" },
+      clarifications: [{ question: "Did you really mean two viewings at the same time?" }],
+    };
+    const result = await parseSlotRequest("two viewings at Maple St both at 2pm", new MockLlm([withBoth]));
+    expect(result.proposal.slots).toHaveLength(0);
+    expect(result.proposal.clarifications).toHaveLength(1);
+  });
+
+  it("keeps only the first clarification when the model stacks several (one question per turn)", async () => {
+    const multi = {
+      slots: [],
+      inviteeLeadIds: [],
+      window: { earliest: "13:00", latest: "19:00" },
+      clarifications: [
+        { question: "Which day next week?", options: ["Monday 20 July", "Tuesday 21 July"] },
+        { question: "What time of day?", options: ["morning", "afternoon", "evening"] },
+        { question: "Who should I invite?", options: ["Sarah Johnson", "Priya Patel"], multiple: true },
+      ],
+    };
+    const result = await parseSlotRequest("some viewings next week", new MockLlm([multi]));
+    expect(result.proposal.clarifications).toHaveLength(1);
+    expect(result.proposal.clarifications[0]!.question).toBe("Which day next week?");
+  });
+
+  it("retries a total dead end (no slots, no question, no reply) and forces a spoken reply", async () => {
+    // The model shrugs at "what's booked this week?" — an empty proposal with nothing to
+    // say. Vera must never render literally nothing; the retry makes `reply` required.
+    const empty = { slots: [], inviteeLeadIds: [], clarifications: [], window: { earliest: "09:00", latest: "20:00" } };
+    const answered = { ...empty, reply: "Two viewings this week: Friday at 9am and 2pm, both at 22 Maple Street." };
+    const llm = new MockLlm([empty, answered]);
+    const result = await parseSlotRequest("what's booked this week?", llm);
+    expect(llm.requests).toHaveLength(2);
+    expect((llm.requests[1]!.tool.inputSchema.required as string[])).toContain("reply");
+    expect(result.proposal.reply).toContain("Friday");
+  });
+
   it("does not retry when the question is the whole request, or when a reply came back", async () => {
     // Single-line instruction-questions are instructions (no reply owed)…
     const llm = new MockLlm([validProposal()]);
@@ -159,6 +204,43 @@ describe("parseSlotRequest", () => {
     const answeredLlm = new MockLlm([{ ...validProposal(), reply: "Yes." }]);
     await parseSlotRequest("two viewings at Maple St\n\nis this ok?", answeredLlm);
     expect(answeredLlm.requests).toHaveLength(1);
+  });
+
+  it("grounds 'today' on the Dublin wall clock, not the UTC date", async () => {
+    // 23:30 UTC on 30 June is 00:30 on 1 JULY in Dublin (IST, UTC+1). toISOString()
+    // would say June 30 — pairing that with a Dublin weekday hands the model a
+    // self-contradictory "today" for an hour every summer night.
+    const { dublinDateISO } = await import("../src/lib/parseSlots.js");
+    expect(dublinDateISO(new Date("2026-06-30T23:30:00Z"))).toBe("2026-07-01");
+    // Winter (GMT): UTC date and Dublin date agree.
+    expect(dublinDateISO(new Date("2026-01-15T23:30:00Z"))).toBe("2026-01-15");
+  });
+
+  it("refuses to guess a time: clears slots and asks when the request gave none", async () => {
+    // The model defaulted a time (2pm) though the admin never gave one. Time is the one
+    // detail we don't guess — clear the plan and ask, deterministically.
+    const noTimeGiven = validProposal(); // slots at 14:00, but the request below has no time
+    const result = await parseSlotRequest(
+      "three viewings at Maple Street next Tuesday, invite Johnson and Patel",
+      new MockLlm([noTimeGiven])
+    );
+    expect(result.proposal.slots).toHaveLength(0);
+    expect(result.proposal.clarifications).toHaveLength(1);
+    expect(result.proposal.clarifications[0]!.question).toMatch(/what time/i);
+    expect(result.proposal.clarifications[0]!.options).toBeUndefined();
+  });
+
+  it("does not ask for a time when the request already gave one", async () => {
+    for (const text of [
+      "three viewings at Maple Street next Tuesday at 2pm, invite Johnson",
+      "three viewings at Maple Street next Tuesday afternoon, invite Johnson",
+      "a viewing at Maple Street next Tuesday at 14:00, invite Johnson",
+      "a viewing at Maple Street next Tuesday morning, invite Johnson",
+    ]) {
+      const result = await parseSlotRequest(text, new MockLlm([validProposal()]));
+      expect(result.proposal.slots.length).toBeGreaterThan(0);
+      expect(result.proposal.clarifications).toHaveLength(0);
+    }
   });
 
   it("deduplicates repeated invitee ids ('inviting Conor and Conor' must never render)", async () => {
