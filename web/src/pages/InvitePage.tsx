@@ -122,7 +122,7 @@ export default function InvitePage() {
             </Card>
             {state.alternatives.length === 0 ? (
               <p className="text-sm text-stone-500">
-                No other times are available right now — the team will be in touch with new slots soon.
+                No other times are available right now — the team will be in touch with new viewings soon.
               </p>
             ) : (
               <ul className="space-y-2">
@@ -156,42 +156,45 @@ export default function InvitePage() {
   );
 }
 
+// Message-first: the personalised note IS the invitation — the property details and
+// the action support it, not the other way round. The message renders in the same
+// bubble language as the admin thread, so the product speaks with one voice.
 function ViewingCard(props: { invitation: InvitationView; busy: boolean; onAccept: () => void }) {
   const { invitation } = props;
-  const firstName = invitation.lead.name.split(" ")[0];
   return (
-    <Card className="p-6">
-      <p className="text-xs font-semibold uppercase tracking-widest text-emerald-800">Viewing invitation</p>
-      <h1 className="mt-2 text-[36px] font-bold leading-[1.15] tracking-tight">
-        {invitation.slot.property.name}
-      </h1>
-      <p className="mt-1 text-sm text-stone-500">
-        For {firstName} · {invitation.slot.property.address}
-      </p>
-
-      <div className="mt-5 flex items-center gap-4 rounded-xl bg-stone-50 p-4">
-        <DateBlock iso={invitation.slot.startsAt} />
-        <div>
-          <p className="text-sm font-semibold">{formatSlotTime(invitation.slot.startsAt)}</p>
-          <p className="mt-0.5 text-sm text-stone-500">{invitation.slot.durationMins} minutes</p>
-        </div>
-      </div>
+    <div className="fade-up space-y-5">
+      <header>
+        <p className="text-sm font-medium text-emerald-800">You're invited to view</p>
+        <h1 className="mt-1 text-[32px] font-bold leading-[1.15] tracking-tight">
+          {invitation.slot.property.name}
+        </h1>
+        <p className="mt-1 text-[15px] text-stone-500">{invitation.slot.property.address}</p>
+      </header>
 
       {invitation.message && (
-        <p className="mt-4 whitespace-pre-wrap border-l-2 border-emerald-800/30 pl-4 text-sm leading-relaxed text-stone-600">
-          {invitation.message}
-        </p>
+        <div className="rounded-2xl rounded-tl-md border border-stone-200/80 bg-white px-5 py-4 shadow-card">
+          <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-stone-700">{invitation.message}</p>
+        </div>
       )}
 
-      <div className="mt-6 space-y-3">
-        <CapacityDots
-          taken={invitation.slot.acceptedCount}
-          max={invitation.slot.maxAttendees}
-        />
-        <Button variant="accent" onClick={props.onAccept} disabled={props.busy} className="w-full py-3">
+      <Card className="p-5">
+        <div className="flex items-center gap-4">
+          <DateBlock iso={invitation.slot.startsAt} />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">{formatSlotTime(invitation.slot.startsAt)}</p>
+            <p className="mt-0.5 text-sm text-stone-500">{invitation.slot.durationMins}-minute viewing</p>
+            <p className="mt-2">
+              <CapacityDots taken={invitation.slot.acceptedCount} max={invitation.slot.maxAttendees} />
+            </p>
+          </div>
+        </div>
+        <Button variant="accent" onClick={props.onAccept} disabled={props.busy} className="mt-5 w-full py-3">
           {props.busy ? "Confirming…" : "Accept invitation"}
         </Button>
-      </div>
-    </Card>
+        <p className="mt-2.5 text-center text-xs text-stone-400">
+          One tap — your spot is held straight away.
+        </p>
+      </Card>
+    </div>
   );
 }

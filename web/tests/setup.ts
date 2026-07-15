@@ -1,10 +1,14 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
+import { resetAdminSession } from "../src/pages/AdminPage";
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  // The admin conversation survives unmount by design (module memory) — tests must not
+  // inherit each other's exchanges.
+  resetAdminSession();
 });
 
 /** Route-aware fetch mock: maps "METHOD /path" prefixes to canned responses. */

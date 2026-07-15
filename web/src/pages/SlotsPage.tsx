@@ -28,7 +28,7 @@ export default function SlotsPage() {
     <Shell nav>
       <div className="px-5 py-12 sm:px-8">
         <header className="mb-8">
-          <h1 className="text-[36px] font-bold leading-[1.15] tracking-tight">Slots</h1>
+          <h1 className="text-[36px] font-bold leading-[1.15] tracking-tight">Viewings</h1>
           <p className="mt-2 text-[16px] text-stone-500">Every upcoming viewing, its capacity, and who's coming.</p>
         </header>
 
@@ -42,7 +42,7 @@ export default function SlotsPage() {
         {state.kind === "loaded" && state.slots.length === 0 && (
           <Card>
             <p className="text-[15px] text-stone-500">
-              No viewing slots yet —{" "}
+              No viewings yet —{" "}
               <Link to="/admin" className="font-semibold text-emerald-800 underline underline-offset-2">
                 describe your first one
               </Link>{" "}

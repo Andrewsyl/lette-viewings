@@ -9,6 +9,7 @@ import type {
   InvitationSummary,
   InvitationView,
   LeadSummary,
+  MeResponse,
   ParseRequest,
   ParseResponse,
   SlotFullResponse,
@@ -37,6 +38,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(body?.message ?? `Request failed (${res.status})`, res.status);
   }
   return body as T;
+}
+
+export function fetchMe(): Promise<MeResponse> {
+  return request("/api/me");
 }
 
 export function parseSlotRequest(text: string): Promise<ParseResponse> {

@@ -8,25 +8,34 @@ npm run setup && npm run dev    # web on http://localhost:5173, API proxied to :
 
 # or web-only, from this directory:
 npm run dev
-npm test                        # 8 UI tests (fetch mocked, no server needed)
+npm test                        # UI tests (fetch mocked, no server needed)
 npm run typecheck
 ```
 
 ## Routes
 
-- `/admin` — the conversational slot creator: describe what you need in plain English,
-  review the structured preview (slots + invitees + any clarifying questions), confirm,
-  then draft/edit/approve the AI-written invitations. Each sent invitation shows its
-  invite link for the demo.
+- `/admin` — the conversational slot creator. Vera (the assistant) greets you by name;
+  you describe what you need in plain English and the exchange builds as a light thread:
+  her clarifying questions arrive as turns you answer with one-tap option chips
+  (toggleable for pick-several questions like "who should I invite?") or a typed reply.
+  Her closing turn is the structured preview — slots + invitees + her spoken assumptions —
+  which you confirm before anything exists, then draft/edit/approve the AI-written
+  invitations. Each sent invitation shows its invite link for the demo. Existing viewings
+  are managed the same way — "cancel Tuesday's viewings at Maple Street", "move the 5pm
+  to 7pm" — with cancels and moves shown in the preview (including who already accepted)
+  before anything is applied.
 - `/invite/:id` — the invitee's page: personalised message, live capacity
   ("3 of 5 spots remaining"), accept — and when a slot is full, tappable alternative
   times instead of a dead end.
 
 ## Design notes
 
-- Deliberately a single-shot composer + preview, not a chat: the value is the
-  **confirmation gate** — the admin sees exactly what the AI understood before anything
-  exists. Clarifying questions render as a banner and block confirmation.
+- A light thread over a stateless parse, not a chat app: the conversation is
+  presentation, the text is the state. Every answer is appended to one request string
+  and re-parsed as a single stateless call; "edit the full request" collapses the thread
+  back into an editable textarea. The **confirmation gate** stays the point — the
+  structured preview and drafts review render as full sections, never chat bubbles, and
+  clarifying questions block confirmation until answered.
 - Plain `fetch` + hooks; no state library — two pages don't justify one.
 - Types come from `@lette/shared`, the same contract the server implements.
 - API calls go through the Vite dev proxy (`/api` → `:4100`), so there's no base-URL

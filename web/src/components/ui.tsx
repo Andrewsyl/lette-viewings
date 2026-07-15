@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
+import { resetAdminSession } from "../pages/AdminPage";
 
 // Small shared kit so the pages compose from consistent pieces instead of
 // re-inventing class strings. Deliberately tiny — a design system is overkill
@@ -110,7 +111,7 @@ export function CapacityDots({ taken, max }: { taken: number; max: number }) {
 
 const NAV_ITEMS = [
   { to: "/admin", label: "New viewing", end: true },
-  { to: "/admin/slots", label: "Slots", end: false },
+  { to: "/admin/slots", label: "Viewings", end: false },
   { to: "/admin/leads", label: "Leads", end: false },
 ];
 
@@ -128,6 +129,34 @@ function Wordmark() {
   );
 }
 
+function MainNav() {
+  const { pathname } = useLocation();
+  return (
+    <nav aria-label="Main" className="mt-3 flex gap-1 md:mt-0 md:flex-col">
+      {NAV_ITEMS.map((item) => (
+        <NavLink
+          key={item.to}
+          to={item.to}
+          end={item.end}
+          onClick={() => {
+            // "New viewing" clicked while already on the chat means "start over" —
+            // forget the exchange, and the same-path push remounts the page fresh
+            // (see AdminChat in main.tsx). Arriving from another tab restores instead.
+            if (item.end && pathname === item.to) resetAdminSession();
+          }}
+          className={({ isActive }) =>
+            `rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
+              isActive ? "bg-stone-100 text-stone-900" : "text-stone-500 hover:text-stone-800"
+            }`
+          }
+        >
+          {item.label}
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
+
 /** Two registers, deliberately:
  *  - Admin (`nav`): a full-bleed work surface — full-height sidebar, edge to edge, the
  *    way tools people live in are built (workspace is never spent on decoration).
@@ -141,24 +170,7 @@ export function Shell({ children, nav = false }: { children: ReactNode; nav?: bo
           <div className="mb-1 px-1 md:mb-8">
             <Wordmark />
           </div>
-          <nav aria-label="Main" className="mt-3 flex gap-1 md:mt-0 md:flex-col">
-            {NAV_ITEMS.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  `rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
-                    isActive
-                      ? "bg-stone-100 text-stone-900"
-                      : "text-stone-500 hover:text-stone-800"
-                  }`
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
+          <MainNav />
         </aside>
         <main className="min-w-0 flex-1">{children}</main>
       </div>
