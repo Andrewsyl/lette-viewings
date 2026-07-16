@@ -2,6 +2,11 @@ import type { ConfirmResponse } from "@lette/shared";
 import { formatSlotTime } from "../../api";
 import { Button } from "../../components/ui";
 import { SlotInvitations } from "./SlotInvitations";
+import { useTypewriter } from "./useTypedGreeting";
+
+// Confirm responses whose summary has already been spoken — navigating away and back
+// restores the panel instantly instead of Vera repeating herself.
+const spokenSummaries = new WeakSet<ConfirmResponse>();
 
 export function CreatedPanel(props: { created: ConfirmResponse; onReset: () => void }) {
   const { created } = props;
@@ -54,9 +59,14 @@ export function CreatedPanel(props: { created: ConfirmResponse; onReset: () => v
         (created.invitations.length > 0
           ? ` Next: I'll draft ${inviteeNames.length === 1 ? "an invitation" : "invitations"} for ${nameList} below — you can edit every message, and nothing sends until you approve it.`
           : first
-            ? " No invitees yet — you can create more viewings or add people from another request."
+            ? " No invitees yet — whenever you're ready, just tell me: \"add Sarah to Saturday's viewing\"."
             : "")
       : "All set.";
+  // The summary speaks itself like every other Vera turn — the panel arriving fully
+  // formed reads as a page swap, not a reply. Pacing of known text, not a fake wait.
+  const spoken = useTypewriter(summary, true, !spokenSummaries.has(created), () =>
+    spokenSummaries.add(created)
+  );
   return (
     <section className="space-y-5">
       <h1 className="sr-only">Viewings created</h1>
@@ -65,10 +75,12 @@ export function CreatedPanel(props: { created: ConfirmResponse; onReset: () => v
           V
         </span>
         <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-stone-200/80 bg-white px-4 py-3 shadow-card">
-          <p className="text-[15px] leading-relaxed text-stone-700">{summary}</p>
+          <p className={`text-[15px] leading-relaxed text-stone-700 ${spoken === summary ? "" : "streaming-caret"}`}>
+            {spoken}
+          </p>
         </div>
       </div>
-      <div className="space-y-5 sm:pl-10">
+      <div className="fade-up space-y-5 sm:pl-10">
         {created.slots.map((slot) => (
           <SlotInvitations
             key={slot.id}

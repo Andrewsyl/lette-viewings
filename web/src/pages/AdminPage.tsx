@@ -96,8 +96,9 @@ export default function AdminPage() {
     return hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   });
   const greetingFull =
-    `${salutation}${adminName ? `, ${adminName}` : ""} — I'm Vera. Tell me what viewings you need ` +
-    `— property, day, who to invite — and I'll set them up. Nothing is created or sent until you say so.`;
+    `${salutation}${adminName ? `, ${adminName}` : ""} — I'm Vera. Describe the viewings you ` +
+    `need in your own words; I'll propose the schedule and draft the invitations. ` +
+    `You approve everything before it goes anywhere.`;
   const greeting = useTypedGreeting(greetingFull, meSettled);
 
   // `candidate` is the full request text to parse. runParse owns whether it becomes the

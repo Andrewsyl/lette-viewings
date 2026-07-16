@@ -266,7 +266,14 @@ export function SlotInvitations(props: {
             </div>
 
             {hasDrafts && !sent[inv.id] && (
-              isStreaming ? (
+              isStreaming && !(drafts[inv.id]?.length) ? (
+                // Waiting for the model's first characters — an honest "Vera is
+                // thinking" beat instead of an empty box with a blinking caret.
+                <div className="mt-3 flex min-h-16 items-center rounded-xl bg-stone-50 p-4">
+                  <span className="sr-only">Vera is drafting…</span>
+                  <TypingDots />
+                </div>
+              ) : isStreaming ? (
                 <p className="streaming-caret mt-3 min-h-16 whitespace-pre-wrap rounded-xl bg-stone-50 p-4 text-sm leading-relaxed text-stone-700">
                   {drafts[inv.id] ?? ""}
                 </p>
