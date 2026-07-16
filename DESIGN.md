@@ -92,6 +92,14 @@ model returned something that *looks* right." Every layer here exists to catch t
 The fence lives in one place (`server/src/lib/validatedToolCall.ts`); both LLM features go
 through it.
 
+Beyond shape validation, deterministic post-checks enforce the rules the model follows
+only probabilistically — hardened through live adversarial testing: **a booking needs all
+four coordinates (property, day, time, invitees) and the model may not choose any of them.**
+A missing coordinate becomes a question with one-tap options; a time the admin literally
+typed is never silently moved (a clash there asks, with the nearest free times); a time
+nobody said is never booked. Clash arithmetic, question limits (one per turn), and
+duplicate-invitee collapsing are all code, not prompt compliance.
+
 ## Data model
 
 ```

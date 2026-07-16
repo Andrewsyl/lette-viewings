@@ -17,7 +17,7 @@ describe("API", () => {
   describe("POST /api/nl/parse", () => {
     it("returns a structured proposal for admin review", async () => {
       setLlmClient(new MockLlm([validProposal()]));
-      const res = await request(app).post("/api/nl/parse").send({ text: "three 30-minute slots at Sycamore Lane at 2pm" });
+      const res = await request(app).post("/api/nl/parse").send({ text: "three 30-minute slots at Sycamore Lane tomorrow at 2pm" });
 
       expect(res.status).toBe(200);
       expect(res.body.proposal.slots).toHaveLength(2);

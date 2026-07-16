@@ -48,10 +48,16 @@ export function PreviewPanel(props: {
   // Vera answers with what she's actually planning — specifics, not a heading. Composed
   // client-side from the proposal (known facts, no model call, nothing to hallucinate).
   const parts: string[] = [];
+  const slotProperties = [...new Set(proposal.slots.map((s) => s.propertyId))];
   if (firstSlot) {
+    // Honest about scope: "3 viewings at 17 Sycamore Lane" while the cards show three
+    // different properties misdescribes the plan being confirmed.
+    const where =
+      slotProperties.length === 1
+        ? `at ${propertyById.get(firstSlot.propertyId)?.name ?? "the property"}`
+        : `across ${slotProperties.length} properties`;
     parts.push(
-      `${proposal.slots.length === 1 ? "one viewing" : `${proposal.slots.length} viewings`} at ` +
-        `${propertyById.get(firstSlot.propertyId)?.name ?? "the property"} on ${dayLabel}` +
+      `${proposal.slots.length === 1 ? "one viewing" : `${proposal.slots.length} viewings`} ${where} on ${dayLabel}` +
         `${inviteeList ? `, inviting ${inviteeList}` : ""}`
     );
   }
@@ -113,7 +119,11 @@ export function PreviewPanel(props: {
               <h2 className="text-sm font-semibold text-stone-700">
                 {proposal.slots.length} viewing{proposal.slots.length === 1 ? "" : "s"} to create
               </h2>
-              <Badge tone="stone">{propertyById.get(proposal.slots[0]!.propertyId)?.name}</Badge>
+              <Badge tone="stone">
+                {slotProperties.length === 1
+                  ? propertyById.get(proposal.slots[0]!.propertyId)?.name
+                  : `${slotProperties.length} properties`}
+              </Badge>
             </div>
             <ul className="mt-4 space-y-3">
               {proposal.slots.map((slot, i) => (

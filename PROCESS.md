@@ -59,13 +59,21 @@ invitee's link (now an atomic swap — every issued link keeps resolving), and c
 trusted the previewed times (the no-double-booking check now re-runs inside the write
 transaction — the preview repair is a convenience; the transaction is the guarantee).
 
-**7 — Hands-on hardening, then stop.** Used the product like a property manager and fixed
-what that surfaced, each with a regression test: "send a few more invites to the 2pm
-slot" had no schema representation (became a real `addInvitees` operation), the preview's
-reply bar answered above the plan it sits under (restructured), streamed drafts arrived
-in chunks (display smoothing, no fake delay). Split the admin page into focused modules,
-verified a fresh `git clone` cold, and stopped — what remains is DESIGN.md's scope-cuts
-list, not unfinished work.
+**7 — Hands-on hardening.** Used the product like a property manager and fixed what that
+surfaced, each with a regression test: "send a few more invites to the 2pm slot" had no
+schema representation (became a real `addInvitees` operation), the preview's reply bar
+answered above the plan it sits under (restructured), streamed drafts arrived in chunks
+(display smoothing, no fake delay). Split the admin page into focused modules and
+verified a fresh `git clone` cold.
+
+**8 — A second adversarial round, then stop.** 22 fresh scenarios against the live model
+plus more real use distilled one rule from a string of small betrayals (a named 1pm
+moved to 4pm; "anything earlier?" answered by silently booking noon; "a few bookings"
+spread across every property on a day nobody said; a viewing created with nobody
+invited): **a booking needs all four coordinates — property, day, time, invitees — and
+the model may not choose any of them.** Each is now a deterministic fence that asks
+instead, with one-tap pills, most blocking first; a clash on a named time outranks every
+other question. What remains is DESIGN.md's scope-cuts list, not unfinished work.
 
 ## What the AI got wrong along the way
 

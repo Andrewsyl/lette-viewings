@@ -15,7 +15,7 @@ describe("parseSlotRequest", () => {
 
   it("accepts a valid proposal and logs the call", async () => {
     const llm = new MockLlm([validProposal()]);
-    const result = await parseSlotRequest("three slots for Sycamore Lane at 2pm", llm);
+    const result = await parseSlotRequest("three slots for Sycamore Lane tomorrow at 2pm", llm);
 
     expect(result.proposal.slots).toHaveLength(2);
     expect(result.proposal.inviteeLeadIds).toEqual(["lead_kavanagh", "lead_sharma"]);
@@ -28,7 +28,7 @@ describe("parseSlotRequest", () => {
 
   it("repairs once when the first output is garbage, and succeeds", async () => {
     const llm = new MockLlm([{ nonsense: true }, validProposal()]);
-    const result = await parseSlotRequest("slots at 2pm please", llm);
+    const result = await parseSlotRequest("slots at Sycamore Lane tomorrow at 2pm please", llm);
 
     expect(result.proposal.slots).toHaveLength(2);
     expect(llm.requests).toHaveLength(2);
@@ -150,6 +150,29 @@ describe("parseSlotRequest", () => {
     expect(result.proposal.reply).toContain("one invitation per viewing");
   });
 
+  it("retries for a reply when a question rides one line with the instruction", async () => {
+    // Battery: "book riverpoint thursday 10am — also, how many viewings are booked
+    // tuesday?" booked the slot and ignored the question. The retry used to require a
+    // multi-line exchange; a same-line question deserves the same guarantee.
+    const silent = validProposal();
+    const answered = { ...validProposal(), reply: "Two viewings are booked next Tuesday." };
+    const llm = new MockLlm([silent, answered]);
+    const result = await parseSlotRequest(
+      "book two viewings at Sycamore Lane tuesday at 2pm — also, how many viewings are already booked?",
+      llm
+    );
+    expect(llm.requests).toHaveLength(2);
+    expect(result.proposal.reply).toContain("Two viewings");
+  });
+
+  it("does not demand a reply for politely-phrased instructions", async () => {
+    // "Can you book…?" is an instruction wearing a question mark — requiring a spoken
+    // reply would double the model calls for courteous phrasing.
+    const llm = new MockLlm([validProposal()]);
+    await parseSlotRequest("Can you book two viewings at Sycamore Lane tuesday at 2pm?", llm);
+    expect(llm.requests).toHaveLength(1);
+  });
+
   it("clears slots when the model returns a clarification alongside them (no plan behind a question)", async () => {
     // The model sometimes floats slots — occasionally self-clashing — next to a question.
     // A response with an open question must carry no slots.
@@ -227,7 +250,28 @@ describe("parseSlotRequest", () => {
     expect(result.proposal.slots).toHaveLength(0);
     expect(result.proposal.clarifications).toHaveLength(1);
     expect(result.proposal.clarifications[0]!.question).toMatch(/what time/i);
-    expect(result.proposal.clarifications[0]!.options).toBeUndefined();
+    // Part-of-day chips for one-tap answers; an exact time can still be typed.
+    expect(result.proposal.clarifications[0]!.options).toEqual(["Morning", "Afternoon", "Evening"]);
+  });
+
+  it("refuses to guess the property: asks with the roster as one-tap options", async () => {
+    // "Give me a few bookings" once produced three viewings spread across every
+    // property. WHERE is the admin's decision — same never-guess rule as time.
+    await prisma.property.create({
+      data: { id: "prop_other", name: "Riverpoint Apartments", address: "41 City Quay, Dublin 2" },
+    });
+    const result = await parseSlotRequest("a few viewings tomorrow at 2pm", new MockLlm([validProposal()]));
+    expect(result.proposal.slots).toHaveLength(0);
+    expect(result.proposal.clarifications[0]!.question).toMatch(/which property/i);
+    expect(result.proposal.clarifications[0]!.options).toEqual(["17 Sycamore Lane", "Riverpoint Apartments"]);
+  });
+
+  it("refuses to guess the day: asks with real days as one-tap options", async () => {
+    const result = await parseSlotRequest("viewings at Sycamore Lane at 2pm", new MockLlm([validProposal()]));
+    expect(result.proposal.slots).toHaveLength(0);
+    expect(result.proposal.clarifications[0]!.question).toMatch(/which day/i);
+    expect(result.proposal.clarifications[0]!.options![0]).toBe("Tomorrow");
+    expect(result.proposal.clarifications[0]!.options!.length).toBeGreaterThanOrEqual(4);
   });
 
   it("does not ask for a time when the request already gave one", async () => {
@@ -263,7 +307,8 @@ describe("parseSlotRequest", () => {
       },
     });
     const llm = new MockLlm([validProposal()]);
-    const result = await parseSlotRequest("slots at Sycamore Lane at 2pm", llm);
+    // A RANGE request ("afternoon") — the admin left room to move, so repair silently.
+    const result = await parseSlotRequest("slots at Sycamore Lane tomorrow afternoon", llm);
 
     // Repair-first, window-bounded: the clashing 14:00 slot moves to the earliest free
     // time INSIDE the admin's stated window (13:00), the free 14:30 slot stays put…
@@ -271,6 +316,156 @@ describe("parseSlotRequest", () => {
     expect(result.proposal.slots.map((s) => s.startTime)).toEqual(["13:00", "14:30"]);
     // …and the move is spoken in the AI's assumptions for the admin to check.
     expect(result.proposal.assumptions.join(" ")).toContain("so I scheduled around that");
+  });
+
+  it("never silently moves a time the admin literally typed — a clash there is a question", async () => {
+    // Live transcript: "create a listing for 17 sycamore lane at 1pm" → day answered →
+    // 1pm–4pm already booked → the repair moved the viewing to 4pm and narrated it in
+    // assumptions. The admin named 1pm; moving it is their call. The clash must surface
+    // as a question with the nearest free times, before anything reaches the preview.
+    await prisma.viewingSlot.create({
+      data: {
+        propertyId: "prop_sycamore",
+        startsAt: new Date(`${futureDate()}T13:00:00`),
+        durationMins: 180,
+        maxAttendees: 5,
+      },
+    });
+    const proposal = {
+      slots: [{ propertyId: "prop_sycamore", date: futureDate(), startTime: "13:00", durationMins: 30, maxAttendees: 5 }],
+      inviteeLeadIds: [],
+      clarifications: [],
+      window: { earliest: "13:00", latest: "17:00" },
+    };
+    const result = await parseSlotRequest(
+      `a viewing at Sycamore Lane at 1pm\n\nClarification — "What day?": tuesday`,
+      new MockLlm([proposal])
+    );
+
+    expect(result.proposal.slots).toHaveLength(0);
+    const q = result.proposal.clarifications[0]!;
+    expect(q.question).toContain("already booked at 1:00pm");
+    expect(q.question).toContain("your call");
+    expect(q.options).toEqual(["4:00pm", "4:30pm", "Another day"]);
+  });
+
+  it("raises a named-time clash even when the model chose to ask about something else", async () => {
+    // Live transcript, round two: the model floated the slot but asked "who should I
+    // invite?" — the admin answered, and only THEN heard 1pm was impossible. A wasted
+    // turn. The clash check must outrank whatever the model wanted to ask.
+    await prisma.viewingSlot.create({
+      data: {
+        propertyId: "prop_sycamore",
+        startsAt: new Date(`${futureDate()}T13:00:00`),
+        durationMins: 180,
+        maxAttendees: 5,
+      },
+    });
+    const proposal = {
+      slots: [{ propertyId: "prop_sycamore", date: futureDate(), startTime: "13:00", durationMins: 30, maxAttendees: 5 }],
+      inviteeLeadIds: [],
+      clarifications: [{ question: "Who should I invite to this viewing?" }],
+      window: { earliest: "13:00", latest: "17:00" },
+    };
+    const result = await parseSlotRequest(
+      "booking for tuesday at Sycamore Lane, 1pm",
+      new MockLlm([proposal])
+    );
+
+    expect(result.proposal.slots).toHaveLength(0);
+    expect(result.proposal.clarifications).toHaveLength(1);
+    expect(result.proposal.clarifications[0]!.question).toContain("already booked at 1:00pm");
+    expect(result.proposal.clarifications[0]!.question).not.toContain("invite");
+  });
+
+  it("clears slots the model scheduled at a time nobody said, and asks with the day's booked ranges", async () => {
+    // Live transcript, round three: asked "anything earlier than 1pm?", the model
+    // silently booked NOON — a time appearing nowhere in the admin's words — and moved
+    // on to asking who to invite. Times the admin didn't give are not the model's to
+    // choose. (Slots that follow a named anchor — "three viewings from 2pm" — pass,
+    // because the first slot starts at the named time.)
+    await prisma.viewingSlot.create({
+      data: {
+        propertyId: "prop_sycamore",
+        startsAt: new Date(`${futureDate()}T13:00:00`),
+        durationMins: 180,
+        maxAttendees: 5,
+      },
+    });
+    const proposal = {
+      slots: [{ propertyId: "prop_sycamore", date: futureDate(), startTime: "12:00", durationMins: 30, maxAttendees: 5 }],
+      inviteeLeadIds: [],
+      clarifications: [{ question: "Who should I invite to this viewing at noon?" }],
+      window: { earliest: "09:00", latest: "13:00" },
+    };
+    const result = await parseSlotRequest(
+      `a viewing at Sycamore Lane tuesday at 1pm\n\nClarification — "1pm is booked — what suits?": anything earlier than 1pm?`,
+      new MockLlm([proposal])
+    );
+
+    expect(result.proposal.slots).toHaveLength(0);
+    expect(result.proposal.clarifications).toHaveLength(1);
+    const q = result.proposal.clarifications[0]!.question;
+    expect(q).toContain("booked 1:00pm–4:00pm");
+    expect(q).toContain("What time should the viewing start?");
+    expect(q).not.toContain("invite");
+  });
+
+  it("asks who to invite before anything is previewed — a booking needs ALL its details", async () => {
+    // User decision: an empty viewing once sailed through preview and confirm with
+    // nobody prompted anywhere. Invitees are the fourth required coordinate (property,
+    // day, time, who) — a plan with no one invited becomes a question with lead pills.
+    const proposal = {
+      slots: [{ propertyId: "prop_sycamore", date: futureDate(), startTime: "16:00", durationMins: 30, maxAttendees: 5 }],
+      inviteeLeadIds: [],
+      clarifications: [],
+      window: { earliest: "16:00", latest: "18:00" },
+    };
+    const result = await parseSlotRequest("a viewing at Sycamore Lane next tuesday at 4pm", new MockLlm([proposal]));
+
+    expect(result.proposal.slots).toHaveLength(0);
+    expect(result.proposal.clarifications).toHaveLength(1);
+    const q = result.proposal.clarifications[0]!;
+    expect(q.question).toMatch(/who should be invited/i);
+    expect(q.options).toEqual(["Sarah Kavanagh", "Priya Sharma", "Conor Murphy"]);
+    expect(q.multiple).toBe(true);
+  });
+
+  it("still asks when the admin DID mention inviting someone it can't match", async () => {
+    // "invite Bob" — stripping this question would silently drop a person, the worst
+    // failure mode. The guard: any mention of inviting keeps the question alive.
+    const proposal = {
+      slots: [{ propertyId: "prop_sycamore", date: futureDate(), startTime: "16:00", durationMins: 30, maxAttendees: 5 }],
+      inviteeLeadIds: [],
+      clarifications: [{ question: "I couldn't find Bob — who would you like to invite?" }],
+      window: { earliest: "16:00", latest: "18:00" },
+    };
+    const result = await parseSlotRequest(
+      "a viewing at Sycamore Lane next tuesday at 4pm, invite Bob",
+      new MockLlm([proposal])
+    );
+
+    expect(result.proposal.clarifications).toHaveLength(1);
+    expect(result.proposal.slots).toHaveLength(0); // question pending ⇒ nothing proposed
+  });
+
+  it("tolerates a model response that omits the array fields entirely", async () => {
+    // Seen live: an addInvitees-only response with `slots` missing — burning the repair
+    // retry on a missing empty array (and 422ing a good proposal) is the fence hurting.
+    const existing = await prisma.viewingSlot.create({
+      data: {
+        propertyId: "prop_sycamore",
+        startsAt: new Date(`${futureDate()}T14:00:00`),
+        durationMins: 30,
+        maxAttendees: 5,
+      },
+    });
+    const llm = new MockLlm([{ addInvitees: [{ slotId: existing.id, leadIds: ["lead_murphy"] }] }]);
+    const result = await parseSlotRequest("add conor to tuesday's 2pm viewing", llm);
+
+    expect(llm.requests).toHaveLength(1); // no repair retry needed
+    expect(result.proposal.addInvitees).toEqual([{ slotId: existing.id, leadIds: ["lead_murphy"] }]);
+    expect(result.proposal.slots).toEqual([]);
   });
 
   it("drops model assumptions that narrate a moved slot's original time", async () => {
@@ -292,7 +487,7 @@ describe("parseSlotRequest", () => {
         "You didn't give a duration, so I went with 30 minutes.",
       ],
     };
-    const result = await parseSlotRequest("slots at Sycamore Lane in the afternoon", new MockLlm([proposal]));
+    const result = await parseSlotRequest("slots at Sycamore Lane tomorrow afternoon", new MockLlm([proposal]));
 
     expect(result.proposal.slots.map((s) => s.startTime)).toEqual(["13:00", "14:30"]);
     const joined = result.proposal.assumptions.join(" ");
@@ -317,7 +512,7 @@ describe("parseSlotRequest", () => {
       });
     }
     const llm = new MockLlm([validProposal()]);
-    const result = await parseSlotRequest("slots at Sycamore Lane in the afternoon", llm);
+    const result = await parseSlotRequest("slots at Sycamore Lane tomorrow afternoon", llm);
 
     // Going outside the window is never a silent repair — it's the admin's call,
     // offered with the nearest out-of-window times and an escape hatch.
