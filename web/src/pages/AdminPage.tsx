@@ -45,6 +45,7 @@ type AdminSession = {
   phase: Phase;
   text: string;
   thread: ThreadTurn[];
+  previewStart: number;
   parseText: string;
   normalized: string | null;
   clarifications: ClarificationQuestion[];
@@ -132,6 +133,11 @@ export default function AdminPage() {
   // always agree; "edit request" collapses the thread back into the composer so the
   // admin can hand-edit the whole exchange.
   const [thread, setThread] = useState<ThreadTurn[]>(saved?.thread ?? []);
+  // Where the preview's local exchange begins. The update bar sits BELOW the plan, so
+  // messages typed there must appear below it too — turns from this index render inside
+  // the preview section, between the plan and the bar, never up in the scrollback above
+  // the cards. Each accepted plan update folds the exchange back into the scrollback.
+  const [previewStart, setPreviewStart] = useState(saved?.previewStart ?? saved?.thread.length ?? 0);
   const [parseText, setParseText] = useState(saved?.parseText ?? "");
   // The model's one-sentence restatement of the whole exchange — what "edit the full
   // request" prefills, so hand-editing reads like a sentence, not a Q&A transcript.
@@ -146,8 +152,8 @@ export default function AdminPage() {
   const [corrections, setCorrections] = useState<{ from: string; to: string }[]>(saved?.corrections ?? []);
 
   useEffect(() => {
-    savedSession.current = { phase, text, thread, parseText, normalized, clarifications, corrections, parsed, created };
-  }, [phase, text, thread, parseText, normalized, clarifications, corrections, parsed, created]);
+    savedSession.current = { phase, text, thread, previewStart, parseText, normalized, clarifications, corrections, parsed, created };
+  }, [phase, text, thread, previewStart, parseText, normalized, clarifications, corrections, parsed, created]);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -186,7 +192,9 @@ export default function AdminPage() {
   // answering "how are you?" or "what's booked?" — shows her reply in the thread but does
   // NOT accumulate. Otherwise every later turn re-answers the chit-chat sitting in the
   // request string, and an aside asked over a preview would blow the preview away.
-  async function runParse(candidate: string) {
+  // `threadLen` is the thread's length including the turn the caller just appended —
+  // when this parse lands a plan, everything before that point is settled scrollback.
+  async function runParse(candidate: string, threadLen: number) {
     setBusy(true);
     setError(null);
     try {
@@ -230,6 +238,9 @@ export default function AdminPage() {
       setParseText(candidate);
       setNormalized(result.proposal.normalizedRequest ?? null);
       setParsed(result);
+      // A new plan settles the exchange so far — refine turns fold into the scrollback
+      // above the cards; Vera's refreshed plan bubble is her answer to them.
+      setPreviewStart(threadLen);
       setPhase("preview");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong — try again.");
@@ -241,14 +252,14 @@ export default function AdminPage() {
   function startExchange() {
     const query = text.trim();
     setThread([{ role: "admin", text: query }]);
-    void runParse(query);
+    void runParse(query, 1);
   }
 
   function applyCorrection(correction: { from: string; to: string }) {
     const escaped = correction.from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const fixed = parseText.replace(new RegExp(escaped, "i"), correction.to);
     setThread((t) => [...t, { role: "admin", text: correction.to }]);
-    void runParse(fixed);
+    void runParse(fixed, thread.length + 1);
   }
 
   // The answer becomes the admin's next turn on screen and an appended line in the single
@@ -263,7 +274,7 @@ export default function AdminPage() {
     setThread((t) => [...t, { role: "admin", text: trimmed }]);
     setReply("");
     setSelected([]);
-    void runParse(next);
+    void runParse(next, thread.length + 1);
   }
 
   // Pushing back on the plan (or just asking Vera something) is a message: it joins the
@@ -275,7 +286,7 @@ export default function AdminPage() {
     const base = parseText.trim();
     const next = base ? `${base}\n\n${trimmed}` : trimmed;
     setThread((t) => [...t, { role: "admin", text: trimmed }]);
-    void runParse(next);
+    void runParse(next, thread.length + 1);
   }
 
   // Collapse the exchange back into the composer for hand-editing. Prefilled with the
@@ -432,7 +443,14 @@ export default function AdminPage() {
                 Start over
               </button>
             </div>
-            <Thread turns={thread} busy={busy} />
+            {/* While a plan is on screen, the exchange since it appeared lives INSIDE the
+                preview section (below the cards, where the update bar is) — only settled
+                scrollback renders up here, so typing at the bottom never makes words
+                appear above the plan. */}
+            <Thread
+              turns={phase === "preview" ? thread.slice(0, previewStart) : thread}
+              busy={busy && phase !== "preview"}
+            />
 
             {phase === "compose" && !busy && (
               <div className="fade-up space-y-2.5 pl-10">
@@ -530,6 +548,7 @@ export default function AdminPage() {
             {phase === "preview" && parsed && (
               <PreviewPanel
                 parsed={parsed}
+                turns={thread.slice(previewStart)}
                 busy={busy}
                 onBack={editRequest}
                 onConfirm={handleConfirm}
@@ -550,9 +569,9 @@ export default function AdminPage() {
   );
 }
 
-function Thread(props: { turns: ThreadTurn[]; busy: boolean }) {
+function Thread(props: { turns: ThreadTurn[]; busy: boolean; label?: string }) {
   return (
-    <div className="space-y-3" aria-label="Conversation">
+    <div className="space-y-3" aria-label={props.label ?? "Conversation"}>
       {props.turns.map((turn, i) =>
         turn.role === "admin" ? (
           <div key={i} className="fade-up flex justify-end">
@@ -588,6 +607,9 @@ function Thread(props: { turns: ThreadTurn[]; busy: boolean }) {
 
 function PreviewPanel(props: {
   parsed: ParseResponse;
+  /** The exchange since this plan appeared — refine messages and Vera's aside answers.
+   *  Rendered below the plan, adjacent to the update bar they were typed into. */
+  turns: ThreadTurn[];
   busy: boolean;
   onBack: () => void;
   onConfirm: () => void;
@@ -668,35 +690,6 @@ function PreviewPanel(props: {
 
   return (
     <section className="fade-up space-y-4">
-      {/* The AI's closing turn, spoken: the plan and its judgement calls are one
-          message in its own voice — the structured card below is the evidence. */}
-      <div className="flex items-start gap-3">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-700 text-xs font-extrabold text-white shadow-card">
-          V
-        </span>
-        <div className="max-w-[85%] space-y-2 rounded-2xl rounded-tl-md border border-stone-200/80 bg-white px-4 py-3 shadow-card">
-          {/* When the latest message was a question about the standing plan, the answer
-              comes first — a question must never be swallowed by the preview. */}
-          {proposal.reply && (
-            <p className="text-[15px] leading-relaxed text-stone-700">{proposal.reply}</p>
-          )}
-          <p className="text-[15px] leading-relaxed text-stone-700">{opener}</p>
-          {proposal.assumptions.length > 0 && (
-            <div className="rounded-xl bg-emerald-50/70 px-3 py-2">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
-                How I interpreted this
-              </p>
-              <p className="mt-1 text-[14px] leading-relaxed text-stone-600">
-                {proposal.assumptions.join(" ")}
-              </p>
-            </div>
-          )}
-          <p className="text-[15px] leading-relaxed text-stone-700">
-            Look right? Nothing's created until you confirm.
-          </p>
-        </div>
-      </div>
-
       <div className="space-y-4 sm:pl-10">
         <div className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 bg-white/70 px-4 py-2.5">
           <div>
@@ -839,6 +832,46 @@ function PreviewPanel(props: {
           </Card>
         )}
 
+      </div>
+
+      {/* The AI's closing turn, spoken BELOW the evidence it explains and right above the
+          update bar it invites a reply into — the plan is a message you can answer, and
+          the answer happens where you read it. */}
+      <div className="flex items-start gap-3">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-700 text-xs font-extrabold text-white shadow-card">
+          V
+        </span>
+        <div className="max-w-[85%] space-y-2 rounded-2xl rounded-tl-md border border-stone-200/80 bg-white px-4 py-3 shadow-card">
+          {/* When the latest message was a question about the standing plan, the answer
+              comes first — a question must never be swallowed by the preview. */}
+          {proposal.reply && (
+            <p className="text-[15px] leading-relaxed text-stone-700">{proposal.reply}</p>
+          )}
+          <p className="text-[15px] leading-relaxed text-stone-700">{opener}</p>
+          {proposal.assumptions.length > 0 && (
+            <div className="rounded-xl bg-emerald-50/70 px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                How I interpreted this
+              </p>
+              <p className="mt-1 text-[14px] leading-relaxed text-stone-600">
+                {proposal.assumptions.join(" ")}
+              </p>
+            </div>
+          )}
+          <p className="text-[15px] leading-relaxed text-stone-700">
+            Look right? Nothing's created until you confirm.
+          </p>
+        </div>
+      </div>
+
+      {/* The exchange since this plan appeared — changes requested, asides answered.
+          It belongs to the plan, not the scrollback above it: what's typed into the bar
+          below appears here, never above the cards. */}
+      {(props.turns.length > 0 || props.busy) && (
+        <Thread turns={props.turns} busy={props.busy} label="Discussion of this plan" />
+      )}
+
+      <div className="space-y-4 sm:pl-10">
         {/* Replying to the plan is a message, not a form: changes go back through the
             same parse → preview loop, so the confirmation gate is never bypassed. */}
         <form

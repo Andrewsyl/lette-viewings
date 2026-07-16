@@ -60,8 +60,10 @@ The calls that shaped the admin experience — each deliberate:
   request" collapses the exchange back into plain editable text at any point.
 - **The AI shows its reading, in its own voice.** The model returns its judgement calls as
   spoken first-person sentences ("I read 'afternoon' as starting at 2pm. I used the default
-  30-minute duration.") and they render inside its closing message, right above the
-  structured preview they explain. Trust comes from being checkable, not from confidence.
+  30-minute duration.") and they render inside its closing message, directly beneath the
+  structured preview they explain — adjacent to the reply bar, so the conversation about
+  the plan happens where the plan is read, never above it. Trust comes from being
+  checkable, not from confidence.
 - **Human review before anything is real.** Nothing is persisted at parse time; slots exist
   only after the admin confirms the preview, and no invitation is "sent" until its message
   is individually approved. LLM output never silently becomes state.

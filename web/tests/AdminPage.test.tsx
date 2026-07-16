@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import AdminPage, { wantsReset } from "../src/pages/AdminPage";
@@ -604,6 +604,48 @@ describe("AdminPage", () => {
     ]) {
       expect(wantsReset(t)).toBe(false);
     }
+  });
+
+  it("keeps the update-bar exchange below the plan, folding it into the scrollback when the plan updates", async () => {
+    mockFetchRoutes({ "POST /api/nl/parse": { body: parseResponse } });
+    renderPage();
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Maple St for Sarah");
+    await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
+    await screen.findByText(/2 viewings to create/i);
+
+    // An aside typed into the bar under the plan must be answered THERE — below the
+    // cards, next to where it was typed — never up in the scrollback above the plan.
+    // (Live complaint: "when I enter text into that box, the update goes above the card".)
+    mockFetchRoutes({
+      "POST /api/nl/parse": {
+        body: {
+          ...parseResponse,
+          proposal: {
+            slots: [],
+            inviteeLeadIds: [],
+            clarifications: [],
+            assumptions: [],
+            reply: "Yes — Sarah is the only invitee so far.",
+          },
+        },
+      },
+    });
+    await userEvent.type(screen.getByPlaceholderText(/anything to change/i), "is sarah the only one?");
+    await userEvent.click(screen.getByRole("button", { name: /^update$/i }));
+    const reply = await screen.findByText(/only invitee so far/i);
+    const cardsHeading = screen.getByText(/2 viewings to create/i);
+    expect(cardsHeading.compareDocumentPosition(reply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // A refine that lands a NEW plan settles the exchange: those turns fold into the
+    // scrollback above the refreshed cards, where history belongs.
+    mockFetchRoutes({ "POST /api/nl/parse": { body: parseResponse } });
+    await userEvent.type(screen.getByPlaceholderText(/anything to change/i), "make the last one 5pm");
+    await userEvent.click(screen.getByRole("button", { name: /^update$/i }));
+    await waitFor(() => {
+      const refineMsg = screen.getByText("make the last one 5pm");
+      const heading = screen.getByText(/2 viewings to create/i);
+      expect(refineMsg.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
   });
 
   it("starts over from the preview when the admin asks to discard the draft", async () => {
