@@ -132,6 +132,23 @@ const TOOL: ToolSpec = {
         },
         description: "Existing viewings the admin asked to move, with their new date/time.",
       },
+      addInvitees: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            slotId: { type: "string", description: "Id from the ALREADY BOOKED list" },
+            leadIds: {
+              type: "array",
+              items: { type: "string", description: "Must be ids from the provided lead list" },
+            },
+          },
+          required: ["slotId", "leadIds"],
+        },
+        description:
+          "Leads to invite to viewings that ALREADY EXIST ('send a few more invites to the 2pm slot'). " +
+          "Creates invitations only — no new viewings, and anyone already invited is skipped automatically.",
+      },
     },
     required: ["slots", "inviteeLeadIds", "clarifications", "assumptions", "window", "normalizedRequest"],
   },
@@ -218,6 +235,24 @@ function buildProposalSchema(
       .max(20)
       .optional()
       .default([]),
+    addInvitees: z
+      .array(
+        z.object({
+          slotId: z
+            .string()
+            .refine((id) => validSlotIds.has(id), { message: "addInvitees refers to a viewing not in the booked list" }),
+          leadIds: z
+            .array(
+              z.string().refine((id) => validLeadIds.has(id), { message: "leadId is not in the provided lead list" })
+            )
+            .min(1)
+            .max(20)
+            .transform((ids) => [...new Set(ids)]),
+        })
+      )
+      .max(20)
+      .optional()
+      .default([]),
   });
 }
 
@@ -273,6 +308,7 @@ function buildSystemPrompt(
     "- The request text may hold several turns of one exchange: the original request first, then lines like 'Clarification — \"<question>\": <answer>' and follow-up messages appended below it. The LAST line is what the admin just said — respond to that, treating everything above as context you have already handled. Never re-answer an earlier line, never repeat a previous reply, and never claim the admin didn't specify something they answered in a clarification line — an answered question is settled.",
     "- Never invent property or lead ids. If the request names someone not in the list, add a clarification.",
     "- Cancelling or moving existing viewings: use `cancelSlotIds` / `reschedules` with ids from ALREADY BOOKED. Touch exactly what the admin asked — never more. If their reference matches nothing, or could match several viewings, ask via clarifications (offer the candidates as options). A cancel/move request creates no new slots unless the admin also asked for them.",
+    "- Inviting more people to a viewing that ALREADY EXISTS ('send a few more invites to the 2pm slot', 'add Tomasz to Tuesday's viewing'): use `addInvitees` with the viewing's id from ALREADY BOOKED and the lead ids. This creates no new viewings, and the system skips anyone already invited — never refuse this or claim invitations are handled elsewhere; it is exactly what you are for. If the admin doesn't say WHO to invite, ask via clarifications with the lead names as options (`multiple: true`). If the viewing reference could match several, ask which one.",
     "- A reschedule changes only a viewing's date and time, NEVER its property. If the admin asks to move a viewing to a DIFFERENT property ('move the Maple Street viewing to Riverpoint'), that is not a reschedule — it's cancelling one and creating another. Don't split it into an unrelated reschedule plus a new slot; ask via clarifications to confirm ('Moving to a different property means cancelling the 2pm at 22 Maple Street and creating a new viewing at Riverpoint — shall I do that?').",
     "- NOTHING happens until the admin confirms the preview. Phrase assumptions as intentions ('I'll cancel the three Tuesday viewings'), never as completed actions ('are cancelled') — claiming something happened before it did destroys trust.",
     "- If the request is a question or not a scheduling instruction ('can you delete viewings?', 'what's booked on Tuesday?', 'list viewings'), answer it in `reply` — grounded in ALREADY BOOKED, short and helpful, mentioning what to say next ('Yes — just tell me which viewings to cancel'). Propose nothing and ask nothing alongside it.",
@@ -599,7 +635,8 @@ export async function parseSlotRequest(text: string, llm?: LlmClient): Promise<P
   const latest = lines[lines.length - 1] ?? "";
   const isFollowUpQuestion =
     lines.length > 1 && /\?\s*$/.test(latest) && !latest.startsWith("Clarification —");
-  const actionCount = raw.slots.length + raw.cancelSlotIds.length + raw.reschedules.length;
+  const actionCount =
+    raw.slots.length + raw.cancelSlotIds.length + raw.reschedules.length + raw.addInvitees.length;
   const noReply = !raw.reply?.trim();
   const unansweredFollowUp = isFollowUpQuestion && actionCount > 0 && raw.clarifications.length === 0;
   const deadEnd = actionCount === 0 && raw.clarifications.length === 0;
@@ -675,7 +712,11 @@ export async function parseSlotRequest(text: string, llm?: LlmClient): Promise<P
   // Denormalise whatever existing viewings the proposal touches, so the preview can
   // show the admin exactly what's about to be cancelled or moved (and who accepted).
   const referencedIds = [
-    ...new Set([...(proposal.cancelSlotIds ?? []), ...(proposal.reschedules ?? []).map((r) => r.slotId)]),
+    ...new Set([
+      ...(proposal.cancelSlotIds ?? []),
+      ...(proposal.reschedules ?? []).map((r) => r.slotId),
+      ...(proposal.addInvitees ?? []).map((a) => a.slotId),
+    ]),
   ];
   let existingSlots: SlotWithCounts[] | undefined;
   if (referencedIds.length > 0) {

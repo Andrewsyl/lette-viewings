@@ -353,6 +353,50 @@ describe("parseSlotRequest", () => {
     await expect(parseSlotRequest("cancel something", llm)).rejects.toBeInstanceOf(LlmOutputError);
   });
 
+  it("accepts invitees for an existing viewing, dedupes them, and returns the viewing's details", async () => {
+    const existing = await prisma.viewingSlot.create({
+      data: {
+        propertyId: "prop_maple",
+        startsAt: new Date(`${futureDate()}T14:00:00`),
+        durationMins: 30,
+        maxAttendees: 5,
+      },
+    });
+    const llm = new MockLlm([
+      {
+        slots: [],
+        inviteeLeadIds: [],
+        clarifications: [],
+        addInvitees: [{ slotId: existing.id, leadIds: ["lead_johnson", "lead_johnson", "lead_patel"] }],
+      },
+    ]);
+    const result = await parseSlotRequest("send a few more invites to the 2pm slot", llm);
+
+    expect(result.proposal.addInvitees).toEqual([
+      { slotId: existing.id, leadIds: ["lead_johnson", "lead_patel"] },
+    ]);
+    // An invite-only turn is an action, not a dead end — no forced-reply retry fired.
+    expect(llm.requests).toHaveLength(1);
+    // The preview payload carries the viewing being invited to.
+    expect(result.existingSlots?.[0]?.id).toBe(existing.id);
+  });
+
+  it("rejects invitees pointed at hallucinated viewing ids or hallucinated leads", async () => {
+    const existing = await prisma.viewingSlot.create({
+      data: {
+        propertyId: "prop_maple",
+        startsAt: new Date(`${futureDate()}T14:00:00`),
+        durationMins: 30,
+        maxAttendees: 5,
+      },
+    });
+    const badSlot = { slots: [], inviteeLeadIds: [], clarifications: [], addInvitees: [{ slotId: "slot_invented", leadIds: ["lead_johnson"] }] };
+    await expect(parseSlotRequest("invite more people", new MockLlm([badSlot, badSlot]))).rejects.toBeInstanceOf(LlmOutputError);
+
+    const badLead = { slots: [], inviteeLeadIds: [], clarifications: [], addInvitees: [{ slotId: existing.id, leadIds: ["lead_invented"] }] };
+    await expect(parseSlotRequest("invite more people", new MockLlm([badLead, badLead]))).rejects.toBeInstanceOf(LlmOutputError);
+  });
+
   it("turns a reschedule onto an occupied time into a question, not a double-booking", async () => {
     const toMove = await prisma.viewingSlot.create({
       data: {

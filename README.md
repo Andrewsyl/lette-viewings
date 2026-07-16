@@ -32,9 +32,10 @@ is visibly labelled as demo output so it can't be mistaken for the real model.
 2. Use the example prompt (or type your own): *"Set up three 30-minute viewings for
    22 Maple Street next Tuesday afternoon, max 5 people each, and invite the Johnson and
    Patel leads"* — existing viewings can be managed the same way: *"cancel Tuesday's
-   viewings at Maple Street"*, *"move the 5pm viewing to 7pm"* (bulk NL operations, one
-   of the brief's bonus items; cancels and moves go through the same preview → confirm
-   gate as creations)
+   viewings at Maple Street"*, *"move the 5pm viewing to 7pm"*, *"send a few more
+   invites to the 2pm slot"* (bulk NL operations, one of the brief's bonus items;
+   cancels, moves and added invitees go through the same preview → confirm gate as
+   creations, and no one is ever re-invited)
 3. Review the parsed preview → **Confirm & create**
 4. **Draft invitations with AI** — messages stream in live, personalised from each lead's
    notes (Sarah asked about parking; Priya works evenings) — edit freely → **Approve & send**

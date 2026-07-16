@@ -163,8 +163,9 @@ instead of an error.
 ## Scope cuts (Pareto)
 
 Built: the three core flows + ambiguity resolution + conversational manage operations
-(cancel/reschedule by name, in the same parse→preview→confirm loop) + streaming drafts +
-shared FE/BE types + mobile-friendly UI + a keyless demo mode.
+(cancel/reschedule/add-invitees by name, in the same parse→preview→confirm loop; added
+invitees are deduped against existing invitations, so no one is ever re-invited) +
+streaming drafts + shared FE/BE types + mobile-friendly UI + a keyless demo mode.
 Cut (and why, and what I'd do with more time): smart defaults learned from slot history
 (needs usage data to be meaningful), recurring/bulk slot templates, real auth, email
 delivery.

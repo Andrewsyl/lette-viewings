@@ -51,6 +51,47 @@ function renderPage() {
   );
 }
 
+const mapleSlot = {
+  id: "slot_existing",
+  property: { id: "prop_maple", name: "22 Maple Street", address: "22 Maple Street, Dublin 6" },
+  startsAt: "2027-01-12T14:00:00.000Z",
+  durationMins: 30,
+  maxAttendees: 5,
+  acceptedCount: 2,
+};
+
+/** "Send a few more invites to the 2pm slot" — invitations added to an EXISTING viewing,
+ *  no new slots. Regression for a live transcript where the model, having no way to
+ *  express this, invented a refusal ("that's done through your property management
+ *  system") and the turn died in a 422. */
+const addInviteesParse: ParseResponse = {
+  proposal: {
+    slots: [],
+    inviteeLeadIds: [],
+    addInvitees: [{ slotId: "slot_existing", leadIds: ["lead_murphy"] }],
+    clarifications: [],
+    assumptions: [],
+  },
+  properties: [{ id: "prop_maple", name: "22 Maple Street", address: "22 Maple Street, Dublin 6" }],
+  leads: [{ id: "lead_murphy", name: "Conor Murphy", email: "conor@example.com", notes: null }],
+  existingSlots: [mapleSlot],
+};
+
+const addInviteesConfirm: ConfirmResponse = {
+  slots: [],
+  invitations: [
+    {
+      id: "inv_new",
+      slotId: "slot_existing",
+      lead: { id: "lead_murphy", name: "Conor Murphy", email: "conor@example.com", notes: null },
+      status: "PENDING",
+      message: null,
+      approvedAt: null,
+    },
+  ],
+  invitedTo: [mapleSlot],
+};
+
 describe("AdminPage", () => {
   it("parses natural language and shows a structured preview before anything is created", async () => {
     mockFetchRoutes({ "POST /api/nl/parse": { body: parseResponse } });
@@ -649,6 +690,38 @@ describe("AdminPage", () => {
     );
     expect(JSON.parse(confirmCalls[0]![1]!.body as string).cancelSlotIds).toEqual(["slot_9"]);
     expect(await screen.findByText(/all set — cancelled the viewing at 22 Maple Street/i)).toBeInTheDocument();
+  });
+
+  it("previews invitees added to an existing viewing and drafts only the new invitations", async () => {
+    mockFetchRoutes({
+      "POST /api/nl/parse": { body: addInviteesParse },
+      "POST /api/slots/confirm": { status: 201, body: addInviteesConfirm },
+    });
+    renderPage();
+
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "send a few more invites to the 2pm slot");
+    await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
+
+    // The preview names the existing viewing and the new invitee — and is explicit that
+    // no new viewings are created and nobody gets re-invited.
+    expect(await screen.findByText(/got it — inviting Conor to the existing viewing at 22 Maple Street/i)).toBeInTheDocument();
+    expect(screen.getByText(/inviting more people to an existing viewing/i)).toBeInTheDocument();
+    expect(screen.getByText("Conor Murphy")).toBeInTheDocument();
+    expect(screen.getByText(/no new viewings — just invitations/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /^confirm$/i }));
+
+    // The op travels in the confirm payload…
+    const confirmCalls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([url]) => String(url).includes("/api/slots/confirm")
+    );
+    expect(JSON.parse(confirmCalls[0]![1]!.body as string).addInvitees).toEqual([
+      { slotId: "slot_existing", leadIds: ["lead_murphy"] },
+    ]);
+    // …and the close names the viewing and offers drafting for the NEW invitation only.
+    expect(await screen.findByText(/all set — invited one more person to the viewing at 22 Maple Street/i)).toBeInTheDocument();
+    expect(screen.getByText(/existing viewing/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /draft invitations with ai/i })).toBeEnabled();
   });
 
   it("prefills 'edit the full request' with the AI's clean restatement, not the Q&A transcript", async () => {

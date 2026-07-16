@@ -210,7 +210,8 @@ export default function AdminPage() {
       const actions =
         result.proposal.slots.length +
         (result.proposal.cancelSlotIds?.length ?? 0) +
-        (result.proposal.reschedules?.length ?? 0);
+        (result.proposal.reschedules?.length ?? 0) +
+        (result.proposal.addInvitees?.length ?? 0);
       if (actions === 0) {
         // Conversational aside: answer it, but don't commit it to the request and don't
         // disturb a preview already on screen. An empty proposal with no reply gets an
@@ -302,6 +303,7 @@ export default function AdminPage() {
         inviteeLeadIds: parsed.proposal.inviteeLeadIds,
         ...(parsed.proposal.cancelSlotIds?.length ? { cancelSlotIds: parsed.proposal.cancelSlotIds } : {}),
         ...(parsed.proposal.reschedules?.length ? { reschedules: parsed.proposal.reschedules } : {}),
+        ...(parsed.proposal.addInvitees?.length ? { addInvitees: parsed.proposal.addInvitees } : {}),
       });
       setCreated(result);
       setPhase("created");
@@ -617,6 +619,10 @@ function PreviewPanel(props: {
     .map((id) => existingById.get(id))
     .filter((s): s is NonNullable<typeof s> => Boolean(s));
   const moves = (proposal.reschedules ?? []).map((r) => ({ to: r, from: existingById.get(r.slotId) }));
+  const adds = (proposal.addInvitees ?? []).map((a) => ({
+    slot: existingById.get(a.slotId),
+    leads: a.leadIds.map((id) => leadById.get(id)).filter((l): l is LeadSummary => Boolean(l)),
+  }));
   // Vera answers with what she's actually planning — specifics, not a heading. Composed
   // client-side from the proposal (known facts, no model call, nothing to hallucinate).
   const parts: string[] = [];
@@ -642,8 +648,23 @@ function PreviewPanel(props: {
   if (moves.length > 0) {
     parts.push(`moving ${moves.length === 1 ? "one viewing" : `${moves.length} viewings`}`);
   }
+  if (adds.length > 0) {
+    const addNames = [...new Set(adds.flatMap((a) => a.leads.map((l) => l.name.split(" ")[0]!)))];
+    const addList =
+      addNames.length > 1
+        ? `${addNames.slice(0, -1).join(", ")} and ${addNames[addNames.length - 1]}`
+        : addNames[0];
+    const firstAdd = adds[0]!;
+    parts.push(
+      `inviting ${addList} to the existing ${
+        adds.length === 1 && firstAdd.slot
+          ? `viewing at ${firstAdd.slot.property.name} (${formatSlotTime(firstAdd.slot.startsAt)})`
+          : `${adds.length} viewings`
+      }`
+    );
+  }
   const opener = parts.length > 0 ? `Got it — ${parts.join(", and ")}.` : "Got it.";
-  const totalActions = proposal.slots.length + cancels.length + moves.length;
+  const totalActions = proposal.slots.length + cancels.length + moves.length + adds.length;
 
   return (
     <section className="fade-up space-y-4">
@@ -778,6 +799,46 @@ function PreviewPanel(props: {
           </Card>
         )}
 
+        {adds.length > 0 && (
+          <Card>
+            <h2 className="text-sm font-semibold text-stone-700">
+              Inviting more people to {adds.length === 1 ? "an existing viewing" : `${adds.length} existing viewings`}
+            </h2>
+            <p className="mt-1 text-xs text-stone-500">
+              No new viewings — just invitations. Anyone already invited is skipped.
+            </p>
+            <ul className="mt-4 space-y-4">
+              {adds.map(({ slot, leads: addLeads }, i) => (
+                <li key={slot?.id ?? i} className="space-y-2">
+                  {slot && (
+                    <div className="flex items-center gap-4">
+                      <DateBlock iso={slot.startsAt} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold">{formatSlotTime(slot.startsAt)}</p>
+                        <p className="mt-0.5 text-xs text-stone-500">{slot.property.name}</p>
+                      </div>
+                      <Badge tone="green">
+                        {slot.acceptedCount} of {slot.maxAttendees} accepted
+                      </Badge>
+                    </div>
+                  )}
+                  <div className="space-y-2 sm:pl-16">
+                    {addLeads.map((lead) => (
+                      <div key={lead.id} className="flex items-center gap-3">
+                        <Avatar name={lead.name} />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">{lead.name}</p>
+                          {lead.notes && <p className="truncate text-xs text-stone-400">{lead.notes}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
+
         {/* Replying to the plan is a message, not a form: changes go back through the
             same parse → preview loop, so the confirmation gate is never bypassed. */}
         <form
@@ -872,10 +933,24 @@ function CreatedPanel(props: { created: ConfirmResponse; onReset: () => void }) 
         .join(", ")}`
     );
   }
+  // Existing viewings that got extra invitees. `invitations` holds only what THIS confirm
+  // created, so a zero count means everyone named was already invited — say that
+  // honestly instead of an "All set" over nothing.
+  const invitedTo = (created.invitedTo ?? []).map((slot) => ({
+    slot,
+    newInvitations: created.invitations.filter((inv) => inv.slotId === slot.id),
+  }));
+  for (const { slot, newInvitations } of invitedTo) {
+    donePieces.push(
+      newInvitations.length > 0
+        ? `invited ${newInvitations.length === 1 ? "one more person" : `${newInvitations.length} more people`} to the viewing at ${slot.property.name} (${formatSlotTime(slot.startsAt)})`
+        : `everyone you named for ${slot.property.name} (${formatSlotTime(slot.startsAt)}) was already invited, so there's nothing new to send there`
+    );
+  }
   const summary =
     donePieces.length > 0
       ? `All set — ${donePieces.join("; ")}.` +
-        (first && inviteeNames.length > 0
+        (created.invitations.length > 0
           ? ` Next: I'll draft ${inviteeNames.length === 1 ? "an invitation" : "invitations"} for ${nameList} below — you can edit every message, and nothing sends until you approve it.`
           : first
             ? " No invitees yet — you can create more viewings or add people from another request."
@@ -903,6 +978,18 @@ function CreatedPanel(props: { created: ConfirmResponse; onReset: () => void }) 
             invitations={created.invitations.filter((inv) => inv.slotId === slot.id)}
           />
         ))}
+        {invitedTo
+          .filter(({ newInvitations }) => newInvitations.length > 0)
+          .map(({ slot, newInvitations }) => (
+            <SlotInvitations
+              key={slot.id}
+              slotId={slot.id}
+              startsAt={slot.startsAt}
+              title={slot.property.name}
+              subtitle={`${formatSlotTime(slot.startsAt)} · existing viewing`}
+              invitations={newInvitations}
+            />
+          ))}
         <Button variant="ghost" onClick={props.onReset} className="px-0">
           ← Create more viewings
         </Button>

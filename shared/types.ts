@@ -42,6 +42,14 @@ export interface ClarificationQuestion {
   multiple?: boolean;
 }
 
+/** Leads to invite to an EXISTING viewing — "send a few more invites to the 2pm slot".
+ *  Creates invitations only, never slots; anyone already invited is skipped, never
+ *  re-invited. */
+export interface ProposedAddInvitees {
+  slotId: string;
+  leadIds: string[];
+}
+
 /** An existing viewing moved to a new date/time via natural language. */
 export interface ProposedReschedule {
   slotId: string;
@@ -58,6 +66,8 @@ export interface SlotProposal {
   cancelSlotIds?: string[];
   /** Existing viewings the admin asked to move. */
   reschedules?: ProposedReschedule[];
+  /** Extra invitees for viewings that already exist. */
+  addInvitees?: ProposedAddInvitees[];
   /** Conversational answer for requests that aren't scheduling instructions ("what's
    *  booked Tuesday?", "can you delete viewings?") — rendered as the AI's turn in the
    *  thread. Only meaningful when the proposal contains no actions or questions. */
@@ -99,6 +109,7 @@ export interface ConfirmRequest {
   inviteeLeadIds: string[];
   cancelSlotIds?: string[];
   reschedules?: ProposedReschedule[];
+  addInvitees?: ProposedAddInvitees[];
 }
 
 export interface SlotWithCounts {
@@ -117,6 +128,11 @@ export interface ConfirmResponse {
   cancelled?: SlotWithCounts[];
   /** Viewings moved by this confirm, with their new times. */
   moved?: SlotWithCounts[];
+  /** Existing viewings this confirm targeted with addInvitees — present even when every
+   *  named lead was already invited (so the UI can say so). `invitations` carries only
+   *  the invitations this confirm CREATED, so the drafts panel never re-drafts messages
+   *  for people invited earlier. */
+  invitedTo?: SlotWithCounts[];
 }
 
 // ---------- Invitations ----------

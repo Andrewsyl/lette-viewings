@@ -217,6 +217,107 @@ describe("API", () => {
         });
       expect(res.status).toBe(201);
     });
+
+    it("adds invitees to an existing viewing — invitations only, no new slots", async () => {
+      const slot = await prisma.viewingSlot.create({
+        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
+      });
+      const res = await request(app)
+        .post("/api/slots/confirm")
+        .send({
+          slots: [],
+          inviteeLeadIds: [],
+          addInvitees: [{ slotId: slot.id, leadIds: ["lead_johnson", "lead_patel"] }],
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.slots).toHaveLength(0);
+      expect(res.body.invitedTo).toHaveLength(1);
+      expect(res.body.invitedTo[0].id).toBe(slot.id);
+      expect(res.body.invitations).toHaveLength(2);
+      expect(res.body.invitations.every((i: { status: string; slotId: string }) => i.status === "PENDING" && i.slotId === slot.id)).toBe(true);
+      expect(await prisma.viewingSlot.count()).toBe(1);
+    });
+
+    it("never re-invites: already-invited leads keep their invitation (and its link) untouched", async () => {
+      const slot = await prisma.viewingSlot.create({
+        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
+      });
+      const existing = await prisma.invitation.create({
+        data: { slotId: slot.id, leadId: "lead_johnson", status: "ACCEPTED", message: "already sent" },
+      });
+
+      const res = await request(app)
+        .post("/api/slots/confirm")
+        .send({
+          slots: [],
+          inviteeLeadIds: [],
+          // lead_johnson repeated within the payload AND already invited in the DB
+          addInvitees: [{ slotId: slot.id, leadIds: ["lead_johnson", "lead_johnson", "lead_murphy"] }],
+        });
+
+      expect(res.status).toBe(201);
+      // Only Conor's invitation is new — the response never re-lists Sarah's, so the
+      // drafts panel can't re-draft a message that was already approved and sent.
+      expect(res.body.invitations).toHaveLength(1);
+      expect(res.body.invitations[0].lead.id).toBe("lead_murphy");
+      const untouched = await prisma.invitation.findUniqueOrThrow({ where: { id: existing.id } });
+      expect(untouched.status).toBe("ACCEPTED");
+      expect(untouched.message).toBe("already sent");
+      expect(await prisma.invitation.count({ where: { slotId: slot.id } })).toBe(2);
+    });
+
+    it("reports the targeted viewing even when everyone named was already invited", async () => {
+      const slot = await prisma.viewingSlot.create({
+        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
+      });
+      await prisma.invitation.create({ data: { slotId: slot.id, leadId: "lead_johnson" } });
+
+      const res = await request(app)
+        .post("/api/slots/confirm")
+        .send({ slots: [], inviteeLeadIds: [], addInvitees: [{ slotId: slot.id, leadIds: ["lead_johnson"] }] });
+
+      expect(res.status).toBe(201);
+      expect(res.body.invitedTo).toHaveLength(1);
+      expect(res.body.invitations).toHaveLength(0);
+    });
+
+    it("rejects addInvitees contradictions and forged references", async () => {
+      const slot = await prisma.viewingSlot.create({
+        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
+      });
+
+      // Inviting to a viewing the same payload cancels is a contradiction, not a 500.
+      const contradiction = await request(app)
+        .post("/api/slots/confirm")
+        .send({
+          slots: [],
+          inviteeLeadIds: [],
+          cancelSlotIds: [slot.id],
+          addInvitees: [{ slotId: slot.id, leadIds: ["lead_johnson"] }],
+        });
+      expect(contradiction.status).toBe(422);
+
+      const forgedSlot = await request(app)
+        .post("/api/slots/confirm")
+        .send({ slots: [], inviteeLeadIds: [], addInvitees: [{ slotId: "slot_forged", leadIds: ["lead_johnson"] }] });
+      expect(forgedSlot.status).toBe(422);
+
+      const forgedLead = await request(app)
+        .post("/api/slots/confirm")
+        .send({ slots: [], inviteeLeadIds: [], addInvitees: [{ slotId: slot.id, leadIds: ["lead_forged"] }] });
+      expect(forgedLead.status).toBe(422);
+    });
+
+    it("rejects invitations to a viewing that already started", async () => {
+      const past = await prisma.viewingSlot.create({
+        data: { propertyId: "prop_maple", startsAt: new Date(Date.now() - 60 * 60 * 1000), durationMins: 30, maxAttendees: 5 },
+      });
+      const res = await request(app)
+        .post("/api/slots/confirm")
+        .send({ slots: [], inviteeLeadIds: [], addInvitees: [{ slotId: past.id, leadIds: ["lead_johnson"] }] });
+      expect(res.status).toBe(422);
+    });
   });
 
   describe("invitation flow", () => {

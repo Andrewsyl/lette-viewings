@@ -186,3 +186,13 @@ like this earns its keep.
   when the correction was quoted back verbatim. What worked was making `reply` a
   required field of the tool schema on retry: with forced tool use the model physically
   cannot omit it. Prompts persuade; schemas compel.
+- **Day 7 — a capability hole made the model invent policy.** Manual testing asked for
+  something completely natural — "send a few more invites to the 2pm slot" — and the
+  tool schema had no way to express it (invitees could only attach to *new* slots). The
+  model, cornered with a request it couldn't emit, hallucinated a refusal: "I don't
+  manage invitations directly — that's done through your property management system."
+  There is no such system. The fix wasn't prompt-side; it was closing the gap with a
+  real `addInvitees` operation through every layer (schema → validation → preview card →
+  confirm transaction, deduped against existing invitations so nobody is ever
+  re-invited). Lesson: a schema is also a scope statement — anything a user can
+  plausibly ask for that the schema can't represent becomes a hallucination surface.

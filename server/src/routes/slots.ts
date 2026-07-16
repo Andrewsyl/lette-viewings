@@ -33,6 +33,16 @@ const confirmBody = z.object({
     .max(20)
     .optional()
     .default([]),
+  addInvitees: z
+    .array(
+      z.object({
+        slotId: z.string(),
+        leadIds: z.array(z.string()).min(1).max(20),
+      })
+    )
+    .max(20)
+    .optional()
+    .default([]),
 }).superRefine((body, ctx) => {
   // A viewing can't be both cancelled and moved — the transaction would delete it and
   // then try to update the deleted row. Contradiction is a payload error, not a 500.
@@ -43,6 +53,16 @@ const confirmBody = z.object({
         code: z.ZodIssueCode.custom,
         path: ["reschedules"],
         message: `Viewing ${r.slotId} appears in both cancelSlotIds and reschedules — it can be cancelled or moved, not both`,
+      });
+    }
+  }
+  // Same contradiction family: inviting people to a viewing this payload also cancels.
+  for (const a of body.addInvitees) {
+    if (cancels.has(a.slotId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["addInvitees"],
+        message: `Viewing ${a.slotId} appears in both cancelSlotIds and addInvitees — can't invite people to a viewing being cancelled`,
       });
     }
   }
@@ -70,16 +90,20 @@ router.post("/confirm", async (req, res, next) => {
   try {
     const body = confirmBody.parse(req.body);
 
-    if (body.slots.length + body.cancelSlotIds.length + body.reschedules.length === 0) {
-      return res.status(422).json({ message: "Nothing to do — no viewings, cancellations or moves in payload" });
+    if (
+      body.slots.length + body.cancelSlotIds.length + body.reschedules.length + body.addInvitees.length ===
+      0
+    ) {
+      return res.status(422).json({ message: "Nothing to do — no viewings, cancellations, moves or invitees in payload" });
     }
     const propertyIds = [...new Set(body.slots.map((s) => s.propertyId))];
     const properties = await prisma.property.findMany({ where: { id: { in: propertyIds } } });
     if (properties.length !== propertyIds.length) {
       return res.status(422).json({ message: "Unknown property in payload" });
     }
-    const leads = await prisma.lead.findMany({ where: { id: { in: body.inviteeLeadIds } } });
-    if (leads.length !== body.inviteeLeadIds.length) {
+    const allLeadIds = [...new Set([...body.inviteeLeadIds, ...body.addInvitees.flatMap((a) => a.leadIds)])];
+    const leads = await prisma.lead.findMany({ where: { id: { in: allLeadIds } } });
+    if (leads.length !== allLeadIds.length) {
       return res.status(422).json({ message: "Unknown lead in payload" });
     }
     for (const slot of body.slots) {
@@ -101,6 +125,16 @@ router.post("/confirm", async (req, res, next) => {
       if (new Date(`${r.date}T${r.startTime}:00`) <= new Date()) {
         return res.status(422).json({ message: "Rescheduled start must be in the future" });
       }
+    }
+    // Invite targets must exist and still be upcoming — an invitation to a viewing
+    // that already happened is nonsense no matter what the client previewed.
+    const inviteTargetIds = [...new Set(body.addInvitees.map((a) => a.slotId))];
+    const inviteTargets = await prisma.viewingSlot.findMany({ where: { id: { in: inviteTargetIds } } });
+    if (inviteTargets.length !== inviteTargetIds.length) {
+      return res.status(422).json({ message: "Unknown viewing in addInvitees payload" });
+    }
+    if (inviteTargets.some((s) => s.startsAt <= new Date())) {
+      return res.status(422).json({ message: "Can't invite people to a viewing that has already started" });
     }
 
     // Details captured before deletion — the response tells the admin what went away.
@@ -183,18 +217,54 @@ router.post("/confirm", async (req, res, next) => {
           data: slotRows.flatMap((row) => body.inviteeLeadIds.map((leadId) => ({ slotId: row.id, leadId }))),
         });
       }
-      return slotRows;
+      // Invitees added to existing viewings. Deduped two ways: within the payload
+      // (slot+lead pairs collapse to one) and against the database — someone already
+      // invited keeps their invitation (and its link) untouched, never re-invited.
+      const addedInvitationIds: string[] = [];
+      const wantedPairs = new Map<string, { slotId: string; leadId: string }>();
+      for (const a of body.addInvitees) {
+        for (const leadId of a.leadIds) wantedPairs.set(`${a.slotId}|${leadId}`, { slotId: a.slotId, leadId });
+      }
+      if (wantedPairs.size > 0) {
+        const existing = await tx.invitation.findMany({
+          where: { slotId: { in: [...new Set([...wantedPairs.values()].map((p) => p.slotId))] } },
+          select: { slotId: true, leadId: true },
+        });
+        const alreadyInvited = new Set(existing.map((inv) => `${inv.slotId}|${inv.leadId}`));
+        for (const [key, pair] of wantedPairs) {
+          if (alreadyInvited.has(key)) continue;
+          const row = await tx.invitation.create({ data: pair });
+          addedInvitationIds.push(row.id);
+        }
+      }
+      return { slotRows, addedInvitationIds };
     });
 
     const slots = await prisma.viewingSlot.findMany({
-      where: { id: { in: created.map((s) => s.id) } },
+      where: { id: { in: created.slotRows.map((s) => s.id) } },
       include: { property: true, _count: { select: { invitations: { where: { status: "ACCEPTED" } } } } },
       orderBy: { startsAt: "asc" },
     });
     const invitations = await prisma.invitation.findMany({
-      where: { slotId: { in: created.map((s) => s.id) } },
+      where: {
+        OR: [
+          { slotId: { in: created.slotRows.map((s) => s.id) } },
+          { id: { in: created.addedInvitationIds } },
+        ],
+      },
       include: { lead: true },
     });
+    // Every targeted viewing is reported, even when all its named leads turned out to be
+    // invited already — the client needs that fact to say so, rather than an "All set"
+    // with nothing under it. (Which invitations are NEW is answered by `invitations`.)
+    const invitedTo =
+      inviteTargetIds.length > 0
+        ? await prisma.viewingSlot.findMany({
+            where: { id: { in: inviteTargetIds } },
+            include: { property: true, _count: { select: { invitations: { where: { status: "ACCEPTED" } } } } },
+            orderBy: { startsAt: "asc" },
+          })
+        : [];
     const movedIds = body.reschedules.map((r) => r.slotId);
     const moved =
       movedIds.length > 0
@@ -217,6 +287,7 @@ router.post("/confirm", async (req, res, next) => {
       })),
       ...(cancelledDtos.length > 0 ? { cancelled: cancelledDtos } : {}),
       ...(moved.length > 0 ? { moved: moved.map(slotToDto) } : {}),
+      ...(invitedTo.length > 0 ? { invitedTo: invitedTo.map(slotToDto) } : {}),
     };
     res.status(201).json(response);
   } catch (err) {
