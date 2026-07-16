@@ -51,7 +51,7 @@ async function main() {
         id: "lead_walsh",
         name: "Emma Walsh",
         email: "emma.walsh@example.com",
-        notes: null,
+        notes: "Secondary school teacher, free after 4pm. Cycles everywhere — asked about bike storage.",
       },
       {
         id: "lead_nowak",
