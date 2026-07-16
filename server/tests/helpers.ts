@@ -49,12 +49,12 @@ export async function seedBasics() {
     data: { name: "Alex Byrne", email: "alex@lette-demo.test" },
   });
   await prisma.property.create({
-    data: { id: "prop_maple", name: "22 Maple Street", address: "22 Maple Street, Dublin 6" },
+    data: { id: "prop_sycamore", name: "17 Sycamore Lane", address: "17 Sycamore Lane, Dublin 6" },
   });
   await prisma.lead.createMany({
     data: [
-      { id: "lead_johnson", name: "Sarah Johnson", email: "sarah@example.com", notes: "Asked about parking." },
-      { id: "lead_patel", name: "Priya Patel", email: "priya@example.com", notes: "Evenings only." },
+      { id: "lead_kavanagh", name: "Sarah Kavanagh", email: "sarah@example.com", notes: "Asked about parking." },
+      { id: "lead_sharma", name: "Priya Sharma", email: "priya@example.com", notes: "Evenings only." },
       { id: "lead_murphy", name: "Conor Murphy", email: "conor@example.com", notes: null },
     ],
   });
@@ -69,10 +69,10 @@ export function futureDate(daysFromNow = 7): string {
 export function validProposal() {
   return {
     slots: [
-      { propertyId: "prop_maple", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 },
-      { propertyId: "prop_maple", date: futureDate(), startTime: "14:30", durationMins: 30, maxAttendees: 5 },
+      { propertyId: "prop_sycamore", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 },
+      { propertyId: "prop_sycamore", date: futureDate(), startTime: "14:30", durationMins: 30, maxAttendees: 5 },
     ],
-    inviteeLeadIds: ["lead_johnson", "lead_patel"],
+    inviteeLeadIds: ["lead_kavanagh", "lead_sharma"],
     clarifications: [],
     window: { earliest: "13:00", latest: "17:00" },
   };

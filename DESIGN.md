@@ -23,7 +23,7 @@ deterministic re-validation (everything).
 |---|---|
 | Express + TypeScript (ESM) | The framework I run in production day to day. Rather than present first-week NestJS, I used the tool I know deeply and kept a clean route/service/lib separation, so the structure maps naturally onto Nest's modules and providers. |
 | Prisma + SQLite | Prisma is a good fit for a schema this size. SQLite keeps setup to `npm i && npm run dev` — no external services to install. The capacity section below covers what changes on Postgres. |
-| Anthropic SDK, `claude-haiku-4-5` by default | The brief says integration pattern > model size. Model is env-configurable (`ANTHROPIC_MODEL`). |
+| Anthropic SDK, `claude-haiku-4-5` by default | Parsing a constrained request into a schema is a small-model task — the integration pattern matters more than model size. Model is env-configurable (`ANTHROPIC_MODEL`). |
 | Vite + React + TS | Two views do not justify a heavier framework. Plain fetch + hooks; no state library. |
 | Vitest + supertest + React Testing Library | LLM is fully mocked in tests — the suite runs with **no API key**. |
 
@@ -140,12 +140,12 @@ instead of an error.
 ## Assumptions (made deliberately, stated openly)
 
 - Single admin, hardcoded identity; invitees access their invitation by id-as-token link.
-  The brief allows stubbed auth.
+  Auth is deliberately stubbed at this stage — the interesting problems are elsewhere.
 - Times are naive local (Europe/Dublin) — no cross-timezone handling. The server pins its
   process timezone to Europe/Dublin at boot so that assumption holds wherever it runs, and
   the prompt derives "today" from the Dublin wall clock (a UTC date paired with a Dublin
   weekday contradicts itself for an hour a night during Irish summer time).
-- "Sending" an invitation flips state and timestamps it; no email integration (per brief).
+- "Sending" an invitation flips state and timestamps it; email delivery is simulated.
   Deliberate consequence: an invitation link is live from the moment viewings are
   confirmed, before its message is approved — approval gates the (simulated) send, not the
   link. A real system would gate the link on the send.
@@ -160,7 +160,7 @@ instead of an error.
 - Leads are pre-seeded; creating leads is out of scope.
 - No pagination/multi-tenancy — wrong complexity for this stage.
 
-## Scope cuts (Pareto)
+## Scope cuts
 
 Built: the three core flows + ambiguity resolution + conversational manage operations
 (cancel/reschedule/add-invitees by name, in the same parse→preview→confirm loop; added

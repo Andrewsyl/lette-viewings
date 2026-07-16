@@ -2,7 +2,7 @@
   "name": "lette-viewings",
   "private": true,
   "version": "0.1.0",
-  "description": "AI-powered viewing slot invitations — Lette take-home challenge",
+  "description": "AI-powered viewing slot invitations — describe viewings in plain English, review, confirm",
   "workspaces": [
     "shared",
     "server",

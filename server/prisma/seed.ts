@@ -1,7 +1,7 @@
 import { prisma } from "../src/lib/db.js";
 
-// Seed data uses the brief's own example entities (22 Maple Street, the Johnson and
-// Patel leads) so the example prompt from the challenge works verbatim on first run.
+// Seed data matches the README's example prompt (17 Sycamore Lane, the Kavanagh and
+// Sharma leads) so it works verbatim on first run.
 async function main() {
   await prisma.invitation.deleteMany();
   await prisma.viewingSlot.deleteMany();
@@ -15,7 +15,7 @@ async function main() {
 
   await prisma.property.createMany({
     data: [
-      { id: "prop_maple", name: "22 Maple Street", address: "22 Maple Street, Ranelagh, Dublin 6" },
+      { id: "prop_sycamore", name: "17 Sycamore Lane", address: "17 Sycamore Lane, Ranelagh, Dublin 6" },
       { id: "prop_quays", name: "Riverpoint Apartments", address: "41 City Quay, Dublin 2" },
       { id: "prop_phibs", name: "9 Botanic View", address: "9 Botanic View, Phibsborough, Dublin 7" },
     ],
@@ -24,15 +24,15 @@ async function main() {
   await prisma.lead.createMany({
     data: [
       {
-        id: "lead_johnson",
-        name: "Sarah Johnson",
-        email: "sarah.johnson@example.com",
+        id: "lead_kavanagh",
+        name: "Sarah Kavanagh",
+        email: "sarah.kavanagh@example.com",
         notes: "Couple, relocating from London in August. Asked twice about parking.",
       },
       {
-        id: "lead_patel",
-        name: "Priya Patel",
-        email: "priya.patel@example.com",
+        id: "lead_sharma",
+        name: "Priya Sharma",
+        email: "priya.sharma@example.com",
         notes: "Works nearby at the hospital; evenings and weekends only. Has a small dog.",
       },
       {

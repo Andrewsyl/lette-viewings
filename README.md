@@ -31,21 +31,17 @@ is visibly labelled as demo output so it can't be mistaken for the real model.
 ## Try it
 
 1. Open http://localhost:5173/admin
-2. Use the example prompt (or type your own): *"Set up three 30-minute viewings for
-   22 Maple Street next Tuesday afternoon, max 5 people each, and invite the Johnson and
-   Patel leads"* — existing viewings can be managed the same way: *"cancel Tuesday's
-   viewings at Maple Street"*, *"move the 5pm viewing to 7pm"*, *"send a few more
-   invites to the 2pm slot"* (bulk NL operations, one of the brief's bonus items;
-   cancels, moves and added invitees go through the same preview → confirm gate as
-   creations, and no one is ever re-invited)
-3. Review the parsed preview → **Confirm & create**
-4. **Draft invitations with AI** — messages stream in live, personalised from each lead's
-   notes (Sarah asked about parking; Priya works evenings) — edit freely → **Approve & send**
-5. Open a sent invitation's link to see the invitee view → **Accept**
-6. To see the full-slot flow: create a slot with `max 1`, invite two leads, accept as
-   both — the second gets alternative times instead of a dead end. Try *"some viewings
-   next week sometime"* to see ambiguity handled with a question instead of a guess —
-   answerable with one tap on an option chip or a typed reply, no retyping the request.
+2. Use the example prompt: *"Set up three 30-minute viewings for 17 Sycamore Lane next
+   Tuesday afternoon, max 5 people each, and invite the Kavanagh and Sharma leads"*
+3. Review the preview → **Confirm & create** → **Draft invitations with AI** — messages
+   stream in live, personalised from each lead's notes — edit freely → **Approve & send**
+4. Open a sent invitation's link to see the invitee view → **Accept**
+
+Existing viewings are managed the same way — *"cancel Tuesday's viewings"*, *"move the
+5pm viewing to 7pm"*, *"send a few more invites to the 2pm slot"* — all through the same
+preview → confirm gate. Also worth trying: a `max 1` slot with two invitees (the second
+to accept gets alternative times, not a dead end) and *"some viewings next week
+sometime"* (a clarifying question with one-tap answers, not a guess).
 
 ## Product decisions
 
@@ -54,8 +50,8 @@ The calls that shaped the admin experience — each deliberate:
 - **"Conversational" = a light thread over a stateless parse, not a chat app.** The
   exchange builds visibly — the admin's request, the AI's clarifying questions, one-tap or
   typed answers — and the AI's closing turn answers with the actual plan ("Got it — three
-  viewings at 22 Maple Street on Tuesday 21 July, inviting Sarah and Priya"). But the
-  brief's required components (structured preview/confirm, review panel) stay full
+  viewings at 17 Sycamore Lane on Tuesday 21 July, inviting Sarah and Priya"). But the
+  parts that carry real decisions (structured preview/confirm, the review panel) stay full
   sections, never chat bubbles buried in scrollback, and there is no conversation state
   underneath: every answer is appended to one request string and re-parsed as a stateless
   single call, so the server sees exactly what the thread shows — and "edit the full
@@ -80,7 +76,7 @@ The calls that shaped the admin experience — each deliberate:
 | `DESIGN.md` | Architecture decisions and trade-offs, written before the code |
 | `PROCESS.md` | How AI coding tools were used — the working rules, the day log, and what the AI got wrong |
 
-## What was deliberately cut (Pareto), and what I'd do with more time
+## What I deliberately cut, and what I'd build next
 
 **Cut for scope, in the order I'd build them next:**
 
@@ -89,14 +85,14 @@ The calls that shaped the admin experience — each deliberate:
    Multi-instance production needs the check *in* the database — `SELECT ... FOR UPDATE`
    on the slot row, or a constraint/trigger that makes overfill impossible regardless of
    application bugs.
-2. **Real invitee auth.** The invitation id doubles as the access link today (brief allows
-   stubbed auth); real version is a signed, expiring token.
+2. **Real invitee auth.** The invitation id doubles as the access link today — a
+   deliberate stub; the real version is a signed, expiring token.
 3. **Lead creation inside the flow.** An unknown invitee currently produces a question
    ("I couldn't find Bob — they may need to be added as a lead first"); the real version
    should offer to capture them on the spot ("give me an email and I'll add him"),
    because every unknown name is an acquisition opportunity, not an error. It's a new
    mutation surface, so it's cut and named. (Typos are already handled: "invite Pryia"
-   asks "Did you mean Priya Patel?".)
+   asks "Did you mean Priya Sharma?".)
 4. **Smart defaults from history.** Learn per-property duration/capacity norms and feed
    them into the prompt as defaults; needs usage data to be meaningful.
 5. **An eval harness.** `LlmCallLog` is already accumulating real inputs and outputs;

@@ -9,22 +9,22 @@ import type { ParseResponse, ConfirmResponse } from "@lette/shared";
 const parseResponse: ParseResponse = {
   proposal: {
     slots: [
-      { propertyId: "prop_maple", date: "2027-01-12", startTime: "14:00", durationMins: 30, maxAttendees: 5 },
-      { propertyId: "prop_maple", date: "2027-01-12", startTime: "14:30", durationMins: 30, maxAttendees: 5 },
+      { propertyId: "prop_sycamore", date: "2027-01-12", startTime: "14:00", durationMins: 30, maxAttendees: 5 },
+      { propertyId: "prop_sycamore", date: "2027-01-12", startTime: "14:30", durationMins: 30, maxAttendees: 5 },
     ],
-    inviteeLeadIds: ["lead_johnson"],
+    inviteeLeadIds: ["lead_kavanagh"],
     clarifications: [],
     assumptions: [],
   },
-  properties: [{ id: "prop_maple", name: "22 Maple Street", address: "22 Maple Street, Dublin 6" }],
-  leads: [{ id: "lead_johnson", name: "Sarah Johnson", email: "sarah@example.com", notes: null }],
+  properties: [{ id: "prop_sycamore", name: "17 Sycamore Lane", address: "17 Sycamore Lane, Dublin 6" }],
+  leads: [{ id: "lead_kavanagh", name: "Sarah Kavanagh", email: "sarah@example.com", notes: null }],
 };
 
 const confirmResponse: ConfirmResponse = {
   slots: [
     {
       id: "slot_1",
-      property: { id: "prop_maple", name: "22 Maple Street", address: "22 Maple Street, Dublin 6" },
+      property: { id: "prop_sycamore", name: "17 Sycamore Lane", address: "17 Sycamore Lane, Dublin 6" },
       startsAt: "2027-01-12T14:00:00.000Z",
       durationMins: 30,
       maxAttendees: 5,
@@ -35,7 +35,7 @@ const confirmResponse: ConfirmResponse = {
     {
       id: "inv_1",
       slotId: "slot_1",
-      lead: { id: "lead_johnson", name: "Sarah Johnson", email: "sarah@example.com", notes: null },
+      lead: { id: "lead_kavanagh", name: "Sarah Kavanagh", email: "sarah@example.com", notes: null },
       status: "PENDING",
       message: null,
       approvedAt: null,
@@ -51,9 +51,9 @@ function renderPage() {
   );
 }
 
-const mapleSlot = {
+const sycamoreSlot = {
   id: "slot_existing",
-  property: { id: "prop_maple", name: "22 Maple Street", address: "22 Maple Street, Dublin 6" },
+  property: { id: "prop_sycamore", name: "17 Sycamore Lane", address: "17 Sycamore Lane, Dublin 6" },
   startsAt: "2027-01-12T14:00:00.000Z",
   durationMins: 30,
   maxAttendees: 5,
@@ -72,9 +72,9 @@ const addInviteesParse: ParseResponse = {
     clarifications: [],
     assumptions: [],
   },
-  properties: [{ id: "prop_maple", name: "22 Maple Street", address: "22 Maple Street, Dublin 6" }],
+  properties: [{ id: "prop_sycamore", name: "17 Sycamore Lane", address: "17 Sycamore Lane, Dublin 6" }],
   leads: [{ id: "lead_murphy", name: "Conor Murphy", email: "conor@example.com", notes: null }],
-  existingSlots: [mapleSlot],
+  existingSlots: [sycamoreSlot],
 };
 
 const addInviteesConfirm: ConfirmResponse = {
@@ -89,7 +89,7 @@ const addInviteesConfirm: ConfirmResponse = {
       approvedAt: null,
     },
   ],
-  invitedTo: [mapleSlot],
+  invitedTo: [sycamoreSlot],
 };
 
 describe("AdminPage", () => {
@@ -97,12 +97,12 @@ describe("AdminPage", () => {
     mockFetchRoutes({ "POST /api/nl/parse": { body: parseResponse } });
     renderPage();
 
-    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Maple St for Sarah");
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Sycamore Lane for Sarah");
     await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
 
     expect(await screen.findByText(/2 viewings to create/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/22 Maple Street/i).length).toBeGreaterThan(0);
-    expect(screen.getByText("Sarah Johnson")).toBeInTheDocument();
+    expect(screen.getAllByText(/17 Sycamore Lane/i).length).toBeGreaterThan(0);
+    expect(screen.getByText("Sarah Kavanagh")).toBeInTheDocument();
     expect(screen.getByText(/draft · not created/i)).toBeInTheDocument();
     expect(screen.getByText(/nothing below exists until you confirm/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /confirm & create/i })).toBeEnabled();
@@ -112,7 +112,7 @@ describe("AdminPage", () => {
     mockFetchRoutes({ "POST /api/nl/parse": { body: parseResponse } });
     renderPage();
 
-    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Maple St{Enter}");
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Sycamore Lane{Enter}");
 
     expect(await screen.findByText(/2 viewings to create/i)).toBeInTheDocument();
   });
@@ -154,8 +154,8 @@ describe("AdminPage", () => {
           proposal: {
             slots: [],
             inviteeLeadIds: [],
-            clarifications: [{ question: 'Did you mean Priya Patel (for "Pryia")?' }],
-            corrections: [{ from: "Pryia", to: "Priya Patel" }],
+            clarifications: [{ question: 'Did you mean Priya Sharma (for "Pryia")?' }],
+            corrections: [{ from: "Pryia", to: "Priya Sharma" }],
             assumptions: [],
           },
         },
@@ -166,16 +166,16 @@ describe("AdminPage", () => {
     await userEvent.type(screen.getByLabelText(/what do you need/i), "slots tomorrow, invite Pryia");
     await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
 
-    await userEvent.click(await screen.findByRole("button", { name: /use "Priya Patel"/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /use "Priya Sharma"/i }));
 
     // The correction shows as the admin's turn in the thread…
-    expect(screen.getByText("Priya Patel")).toBeInTheDocument();
+    expect(screen.getByText("Priya Sharma")).toBeInTheDocument();
     // …and a second parse was fired with the corrected text.
     const parseCalls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.filter(
       ([url]) => String(url).includes("/api/nl/parse")
     );
     expect(parseCalls).toHaveLength(2);
-    expect(JSON.parse(parseCalls[1]![1]!.body as string).text).toContain("Priya Patel");
+    expect(JSON.parse(parseCalls[1]![1]!.body as string).text).toContain("Priya Sharma");
   });
 
   it("answers a clarification with one tap when the AI offers options", async () => {
@@ -223,7 +223,7 @@ describe("AdminPage", () => {
             clarifications: [
               {
                 question: "Who should I invite?",
-                options: ["Sarah Johnson", "Priya Patel", "Conor Murphy"],
+                options: ["Sarah Kavanagh", "Priya Sharma", "Conor Murphy"],
                 multiple: true,
               },
             ],
@@ -234,13 +234,13 @@ describe("AdminPage", () => {
     });
     renderPage();
 
-    await userEvent.type(screen.getByLabelText(/what do you need/i), "slots at Maple St next Tuesday");
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "slots at Sycamore Lane next Tuesday");
     await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
 
     // Chips toggle instead of firing immediately…
-    await userEvent.click(await screen.findByRole("button", { name: "Sarah Johnson" }));
-    await userEvent.click(screen.getByRole("button", { name: "Priya Patel" }));
-    expect(screen.getByRole("button", { name: /✓ Sarah Johnson/ })).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(await screen.findByRole("button", { name: "Sarah Kavanagh" }));
+    await userEvent.click(screen.getByRole("button", { name: "Priya Sharma" }));
+    expect(screen.getByRole("button", { name: /✓ Sarah Kavanagh/ })).toHaveAttribute("aria-pressed", "true");
     await userEvent.click(screen.getByRole("button", { name: /^answer$/i }));
 
     // …and travel together as one comma-separated answer.
@@ -249,7 +249,7 @@ describe("AdminPage", () => {
     );
     expect(parseCalls).toHaveLength(2);
     expect(JSON.parse(parseCalls[1]![1]!.body as string).text).toContain(
-      'Clarification — "Who should I invite?": Sarah Johnson, Priya Patel'
+      'Clarification — "Who should I invite?": Sarah Kavanagh, Priya Sharma'
     );
   });
 
@@ -299,13 +299,13 @@ describe("AdminPage", () => {
     });
     renderPage();
 
-    await userEvent.type(screen.getByLabelText(/what do you need/i), "slots at Maple St on Tuesday afternoon");
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "slots at Sycamore Lane on Tuesday afternoon");
     await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
 
     // Vera answers with the actual plan, not a heading…
-    expect(await screen.findByText(/got it — 2 viewings at 22 Maple Street/i)).toBeInTheDocument();
+    expect(await screen.findByText(/got it — 2 viewings at 17 Sycamore Lane/i)).toBeInTheDocument();
     // …the admin's words stay as the thread's opening turn…
-    expect(screen.getByText("slots at Maple St on Tuesday afternoon")).toBeInTheDocument();
+    expect(screen.getByText("slots at Sycamore Lane on Tuesday afternoon")).toBeInTheDocument();
     // …and she speaks her judgement calls in her own voice.
     expect(screen.getByText(/starting at 2pm/)).toBeInTheDocument();
     expect(screen.getByText(/how i interpreted this/i)).toBeInTheDocument();
@@ -330,7 +330,7 @@ describe("AdminPage", () => {
     await userEvent.type(screen.getByLabelText(/what do you need/i), "two slots, invite Murphy");
     await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
 
-    expect(await screen.findByText(/got it — 2 viewings at 22 Maple Street/i)).toBeInTheDocument();
+    expect(await screen.findByText(/got it — 2 viewings at 17 Sycamore Lane/i)).toBeInTheDocument();
     expect(screen.getByText(/each lead gets one invitation per viewing/i)).toBeInTheDocument();
   });
 
@@ -356,12 +356,12 @@ describe("AdminPage", () => {
     });
     renderPage();
 
-    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Maple St");
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Sycamore Lane");
     await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
     await userEvent.click(await screen.findByRole("button", { name: /confirm & create/i }));
 
     // Vera closes the loop: what was booked, when, and what happens next.
-    expect(await screen.findByText(/all set — one viewing at 22 Maple Street/i)).toBeInTheDocument();
+    expect(await screen.findByText(/all set — one viewing at 17 Sycamore Lane/i)).toBeInTheDocument();
     expect(screen.getByText(/nothing sends until you approve/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /draft invitations with ai/i })).toBeInTheDocument();
   });
@@ -370,12 +370,12 @@ describe("AdminPage", () => {
     const secondInvitation = {
       ...confirmResponse.invitations[0]!,
       id: "inv_2",
-      lead: { id: "lead_patel", name: "Priya Patel", email: "priya@example.com", notes: "Evenings only." },
+      lead: { id: "lead_sharma", name: "Priya Sharma", email: "priya@example.com", notes: "Evenings only." },
     };
     const created = { ...confirmResponse, invitations: [...confirmResponse.invitations, secondInvitation] };
     const stream = [
-      { type: "done", leadId: "lead_johnson", message: "Hi Sarah — here is your reviewed invitation message for Maple Street." },
-      { type: "done", leadId: "lead_patel", message: "Hi Priya — here is your reviewed invitation message for Maple Street." },
+      { type: "done", leadId: "lead_kavanagh", message: "Hi Sarah — here is your reviewed invitation message for Sycamore Lane." },
+      { type: "done", leadId: "lead_sharma", message: "Hi Priya — here is your reviewed invitation message for Sycamore Lane." },
       { type: "complete" },
     ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
 
@@ -390,7 +390,7 @@ describe("AdminPage", () => {
     }));
     renderPage();
 
-    await userEvent.type(screen.getByLabelText(/what do you need/i), "two viewings at Maple St");
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "two viewings at Sycamore Lane");
     await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
     await userEvent.click(await screen.findByRole("button", { name: /confirm & create/i }));
     await userEvent.click(await screen.findByRole("button", { name: /draft invitations with ai/i }));
@@ -406,7 +406,7 @@ describe("AdminPage", () => {
 
   it("offers a per-lead retry when a streamed draft fails", async () => {
     const stream = [
-      { type: "error", leadId: "lead_johnson", message: "Couldn't draft this message — try again or write it manually." },
+      { type: "error", leadId: "lead_kavanagh", message: "Couldn't draft this message — try again or write it manually." },
       { type: "complete" },
     ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -419,7 +419,7 @@ describe("AdminPage", () => {
     }));
     renderPage();
 
-    await userEvent.type(screen.getByLabelText(/what do you need/i), "two viewings at Maple St");
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "two viewings at Sycamore Lane");
     await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
     await userEvent.click(await screen.findByRole("button", { name: /confirm & create/i }));
     await userEvent.click(await screen.findByRole("button", { name: /draft invitations with ai/i }));
@@ -432,7 +432,7 @@ describe("AdminPage", () => {
     mockFetchRoutes({ "POST /api/nl/parse": { body: parseResponse } });
     renderPage();
 
-    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Maple St");
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Sycamore Lane");
     await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
     await screen.findByText(/got it — 2 viewings/i);
 
@@ -446,7 +446,7 @@ describe("AdminPage", () => {
     );
     expect(parseCalls).toHaveLength(2);
     expect(JSON.parse(parseCalls[1]![1]!.body as string).text).toBe(
-      "three slots at Maple St\n\nmake them max 4 people"
+      "three slots at Sycamore Lane\n\nmake them max 4 people"
     );
     // The gate is never bypassed: the updated plan still ends in a preview to confirm.
     expect(await screen.findByRole("button", { name: /confirm & create/i })).toBeEnabled();
@@ -456,7 +456,7 @@ describe("AdminPage", () => {
     mockFetchRoutes({ "POST /api/nl/parse": { body: parseResponse } });
     const first = renderPage();
 
-    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Maple St");
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Sycamore Lane");
     await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
     expect(await screen.findByText(/got it — 2 viewings/i)).toBeInTheDocument();
 
@@ -465,7 +465,7 @@ describe("AdminPage", () => {
     renderPage();
 
     // …and the conversation is still there, preview and all.
-    expect(screen.getByText("three slots at Maple St")).toBeInTheDocument();
+    expect(screen.getByText("three slots at Sycamore Lane")).toBeInTheDocument();
     expect(screen.getByText(/got it — 2 viewings/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /confirm & create/i })).toBeEnabled();
 
@@ -484,7 +484,7 @@ describe("AdminPage", () => {
             inviteeLeadIds: [],
             clarifications: [],
             assumptions: [],
-            reply: "Yes — just tell me which viewings to cancel, e.g. \"cancel Tuesday's viewings at 22 Maple Street\".",
+            reply: "Yes — just tell me which viewings to cancel, e.g. \"cancel Tuesday's viewings at 17 Sycamore Lane\".",
           },
         },
       },
@@ -569,18 +569,18 @@ describe("AdminPage", () => {
         if (call === 1) return new Response(JSON.stringify(parseResponse), { status: 200 });
         // The aside: reply only.
         return new Response(
-          JSON.stringify({ ...parseResponse, proposal: { slots: [], inviteeLeadIds: [], clarifications: [], assumptions: [], reply: "Sarah Johnson is a couple relocating from London." } }),
+          JSON.stringify({ ...parseResponse, proposal: { slots: [], inviteeLeadIds: [], clarifications: [], assumptions: [], reply: "Sarah Kavanagh is a couple relocating from London." } }),
           { status: 200 }
         );
       })
     );
     renderPage();
 
-    await userEvent.type(screen.getByLabelText(/what do you need/i), "two viewings at Maple St, invite Johnson");
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "two viewings at Sycamore Lane, invite Kavanagh");
     await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
     expect(await screen.findByText(/got it — 2 viewings/i)).toBeInTheDocument();
 
-    await userEvent.type(screen.getByPlaceholderText(/anything to change/i), "who's Johnson again?");
+    await userEvent.type(screen.getByPlaceholderText(/anything to change/i), "who's Kavanagh again?");
     await userEvent.click(screen.getByRole("button", { name: /^update$/i }));
 
     // The answer appears AND the preview + confirm button are still there.
@@ -601,8 +601,8 @@ describe("AdminPage", () => {
     // bulk cancel, and single-item refinements.
     for (const t of [
       "cancel all viewings", "cancel everything", "cancel Friday's viewings at Riverpoint",
-      "drop Priya", "remove the 2pm one", "make the last one 5pm", "invite Johnson",
-      "two viewings at Maple Street Monday at 2pm",
+      "drop Priya", "remove the 2pm one", "make the last one 5pm", "invite Kavanagh",
+      "two viewings at Sycamore Lane Monday at 2pm",
     ]) {
       expect(wantsReset(t)).toBe(false);
     }
@@ -611,7 +611,7 @@ describe("AdminPage", () => {
   it("keeps the update-bar exchange below the plan, folding it into the scrollback when the plan updates", async () => {
     mockFetchRoutes({ "POST /api/nl/parse": { body: parseResponse } });
     renderPage();
-    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Maple St for Sarah");
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Sycamore Lane for Sarah");
     await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
     await screen.findByText(/2 viewings to create/i);
 
@@ -653,7 +653,7 @@ describe("AdminPage", () => {
   it("starts over from the preview when the admin asks to discard the draft", async () => {
     mockFetchRoutes({ "POST /api/nl/parse": { body: parseResponse } });
     renderPage();
-    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Maple St");
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Sycamore Lane");
     await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
     expect(await screen.findByText(/got it — 2 viewings/i)).toBeInTheDocument();
 
@@ -663,13 +663,13 @@ describe("AdminPage", () => {
     // Back to the fresh composer — no preview, no thread, no lingering listing.
     expect(screen.getByLabelText(/what do you need/i)).toBeInTheDocument();
     expect(screen.queryByText(/got it — 2 viewings/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/22 Maple Street/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/17 Sycamore Lane/i)).not.toBeInTheDocument();
   });
 
   it("the Start over button clears the exchange", async () => {
     mockFetchRoutes({ "POST /api/nl/parse": { body: parseResponse } });
     renderPage();
-    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Maple St");
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "three slots at Sycamore Lane");
     await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
     await screen.findByText(/got it — 2 viewings/i);
 
@@ -693,7 +693,7 @@ describe("AdminPage", () => {
           existingSlots: [
             {
               id: "slot_9",
-              property: { id: "prop_maple", name: "22 Maple Street", address: "22 Maple Street, Dublin 6" },
+              property: { id: "prop_sycamore", name: "17 Sycamore Lane", address: "17 Sycamore Lane, Dublin 6" },
               startsAt: "2027-01-12T15:00:00.000Z",
               durationMins: 30,
               maxAttendees: 5,
@@ -707,7 +707,7 @@ describe("AdminPage", () => {
         body: { slots: [], invitations: [], cancelled: [
           {
             id: "slot_9",
-            property: { id: "prop_maple", name: "22 Maple Street", address: "22 Maple Street, Dublin 6" },
+            property: { id: "prop_sycamore", name: "17 Sycamore Lane", address: "17 Sycamore Lane, Dublin 6" },
             startsAt: "2027-01-12T15:00:00.000Z",
             durationMins: 30,
             maxAttendees: 5,
@@ -718,11 +718,11 @@ describe("AdminPage", () => {
     });
     renderPage();
 
-    await userEvent.type(screen.getByLabelText(/what do you need/i), "cancel the 3pm viewing at Maple St");
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "cancel the 3pm viewing at Sycamore Lane");
     await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
 
     // The preview says what's being cancelled — including who already accepted.
-    expect(await screen.findByText(/got it — cancelling the viewing at 22 Maple Street/i)).toBeInTheDocument();
+    expect(await screen.findByText(/got it — cancelling the viewing at 17 Sycamore Lane/i)).toBeInTheDocument();
     expect(screen.getByText(/2 accepted — they'll need to be told/i)).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent(/accepted attendees are affected/i);
 
@@ -733,7 +733,7 @@ describe("AdminPage", () => {
       ([url]) => String(url).includes("/api/slots/confirm")
     );
     expect(JSON.parse(confirmCalls[0]![1]!.body as string).cancelSlotIds).toEqual(["slot_9"]);
-    expect(await screen.findByText(/all set — cancelled the viewing at 22 Maple Street/i)).toBeInTheDocument();
+    expect(await screen.findByText(/all set — cancelled the viewing at 17 Sycamore Lane/i)).toBeInTheDocument();
   });
 
   it("previews invitees added to an existing viewing and drafts only the new invitations", async () => {
@@ -748,7 +748,7 @@ describe("AdminPage", () => {
 
     // The preview names the existing viewing and the new invitee — and is explicit that
     // no new viewings are created and nobody gets re-invited.
-    expect(await screen.findByText(/got it — inviting Conor to the existing viewing at 22 Maple Street/i)).toBeInTheDocument();
+    expect(await screen.findByText(/got it — inviting Conor to the existing viewing at 17 Sycamore Lane/i)).toBeInTheDocument();
     expect(screen.getByText(/inviting more people to an existing viewing/i)).toBeInTheDocument();
     expect(screen.getByText("Conor Murphy")).toBeInTheDocument();
     expect(screen.getByText(/no new viewings — just invitations/i)).toBeInTheDocument();
@@ -763,7 +763,7 @@ describe("AdminPage", () => {
       { slotId: "slot_existing", leadIds: ["lead_murphy"] },
     ]);
     // …and the close names the viewing and offers drafting for the NEW invitation only.
-    expect(await screen.findByText(/all set — invited one more person to the viewing at 22 Maple Street/i)).toBeInTheDocument();
+    expect(await screen.findByText(/all set — invited one more person to the viewing at 17 Sycamore Lane/i)).toBeInTheDocument();
     expect(screen.getByText(/existing viewing/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /draft invitations with ai/i })).toBeEnabled();
   });
@@ -775,14 +775,14 @@ describe("AdminPage", () => {
           ...parseResponse,
           proposal: {
             ...parseResponse.proposal,
-            normalizedRequest: "Two 30-minute viewings at 22 Maple Street on Tuesday 12 January at 2pm, invite Sarah.",
+            normalizedRequest: "Two 30-minute viewings at 17 Sycamore Lane on Tuesday 12 January at 2pm, invite Sarah.",
           },
         },
       },
     });
     renderPage();
 
-    await userEvent.type(screen.getByLabelText(/what do you need/i), "some viewings for maple st sometime");
+    await userEvent.type(screen.getByLabelText(/what do you need/i), "some viewings for sycamore lane sometime");
     await userEvent.click(screen.getByRole("button", { name: /preview viewings/i }));
     await screen.findByText(/got it — 2 viewings/i);
 
@@ -790,7 +790,7 @@ describe("AdminPage", () => {
 
     const composer = screen.getByLabelText(/what do you need/i);
     expect(composer).toHaveValue(
-      "Two 30-minute viewings at 22 Maple Street on Tuesday 12 January at 2pm, invite Sarah."
+      "Two 30-minute viewings at 17 Sycamore Lane on Tuesday 12 January at 2pm, invite Sarah."
     );
   });
 

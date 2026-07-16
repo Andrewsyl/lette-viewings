@@ -17,7 +17,7 @@ describe("API", () => {
   describe("POST /api/nl/parse", () => {
     it("returns a structured proposal for admin review", async () => {
       setLlmClient(new MockLlm([validProposal()]));
-      const res = await request(app).post("/api/nl/parse").send({ text: "three 30-minute slots at Maple St at 2pm" });
+      const res = await request(app).post("/api/nl/parse").send({ text: "three 30-minute slots at Sycamore Lane at 2pm" });
 
       expect(res.status).toBe(200);
       expect(res.body.proposal.slots).toHaveLength(2);
@@ -35,7 +35,7 @@ describe("API", () => {
 
     it("502s cleanly when no LLM is configured (no key)", async () => {
       // No mock injected and no ANTHROPIC_API_KEY in the test env.
-      const res = await request(app).post("/api/nl/parse").send({ text: "three slots at Maple St" });
+      const res = await request(app).post("/api/nl/parse").send({ text: "three slots at Sycamore Lane" });
       expect(res.status).toBe(502);
       expect(res.body.message).toContain("AI service is unavailable");
     });
@@ -63,8 +63,8 @@ describe("API", () => {
       const res = await request(app)
         .post("/api/slots/confirm")
         .send({
-          slots: [{ propertyId: "prop_maple", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 }],
-          inviteeLeadIds: ["lead_johnson", "lead_patel"],
+          slots: [{ propertyId: "prop_sycamore", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 }],
+          inviteeLeadIds: ["lead_kavanagh", "lead_sharma"],
         });
 
       expect(res.status).toBe(201);
@@ -77,7 +77,7 @@ describe("API", () => {
       const res = await request(app)
         .post("/api/slots/confirm")
         .send({
-          slots: [{ propertyId: "prop_maple", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 }],
+          slots: [{ propertyId: "prop_sycamore", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 }],
           inviteeLeadIds: ["lead_forged"],
         });
       expect(res.status).toBe(422);
@@ -87,17 +87,17 @@ describe("API", () => {
       const res = await request(app)
         .post("/api/slots/confirm")
         .send({
-          slots: [{ propertyId: "prop_maple", date: "2020-01-01", startTime: "14:00", durationMins: 30, maxAttendees: 5 }],
-          inviteeLeadIds: ["lead_johnson"],
+          slots: [{ propertyId: "prop_sycamore", date: "2020-01-01", startTime: "14:00", durationMins: 30, maxAttendees: 5 }],
+          inviteeLeadIds: ["lead_kavanagh"],
         });
       expect(res.status).toBe(422);
     });
 
     it("cancels viewings (and their invitations) from the approved payload", async () => {
       const slot = await prisma.viewingSlot.create({
-        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T15:00:00`), durationMins: 30, maxAttendees: 5 },
+        data: { propertyId: "prop_sycamore", startsAt: new Date(`${futureDate()}T15:00:00`), durationMins: 30, maxAttendees: 5 },
       });
-      await prisma.invitation.create({ data: { slotId: slot.id, leadId: "lead_johnson" } });
+      await prisma.invitation.create({ data: { slotId: slot.id, leadId: "lead_kavanagh" } });
 
       const res = await request(app)
         .post("/api/slots/confirm")
@@ -112,7 +112,7 @@ describe("API", () => {
 
     it("moves a viewing to its new time from the approved payload", async () => {
       const slot = await prisma.viewingSlot.create({
-        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T10:00:00`), durationMins: 30, maxAttendees: 5 },
+        data: { propertyId: "prop_sycamore", startsAt: new Date(`${futureDate()}T10:00:00`), durationMins: 30, maxAttendees: 5 },
       });
 
       const res = await request(app)
@@ -141,7 +141,7 @@ describe("API", () => {
 
     it("422s when the same viewing is both cancelled and rescheduled", async () => {
       const slot = await prisma.viewingSlot.create({
-        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T10:00:00`), durationMins: 30, maxAttendees: 5 },
+        data: { propertyId: "prop_sycamore", startsAt: new Date(`${futureDate()}T10:00:00`), durationMins: 30, maxAttendees: 5 },
       });
       const res = await request(app)
         .post("/api/slots/confirm")
@@ -162,16 +162,16 @@ describe("API", () => {
     // must 409, never write.
     it("409s a payload that would double-book an existing viewing", async () => {
       await prisma.viewingSlot.create({
-        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
+        data: { propertyId: "prop_sycamore", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
       });
       const res = await request(app)
         .post("/api/slots/confirm")
         .send({
-          slots: [{ propertyId: "prop_maple", date: futureDate(), startTime: "14:15", durationMins: 30, maxAttendees: 5 }],
-          inviteeLeadIds: ["lead_johnson"],
+          slots: [{ propertyId: "prop_sycamore", date: futureDate(), startTime: "14:15", durationMins: 30, maxAttendees: 5 }],
+          inviteeLeadIds: ["lead_kavanagh"],
         });
       expect(res.status).toBe(409);
-      expect(res.body.message).toContain("22 Maple Street");
+      expect(res.body.message).toContain("17 Sycamore Lane");
       expect(await prisma.viewingSlot.count()).toBe(1); // nothing written
     });
 
@@ -180,8 +180,8 @@ describe("API", () => {
         .post("/api/slots/confirm")
         .send({
           slots: [
-            { propertyId: "prop_maple", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 },
-            { propertyId: "prop_maple", date: futureDate(), startTime: "14:15", durationMins: 30, maxAttendees: 5 },
+            { propertyId: "prop_sycamore", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 },
+            { propertyId: "prop_sycamore", date: futureDate(), startTime: "14:15", durationMins: 30, maxAttendees: 5 },
           ],
           inviteeLeadIds: [],
         });
@@ -191,10 +191,10 @@ describe("API", () => {
 
     it("409s a reschedule that lands on another viewing", async () => {
       await prisma.viewingSlot.create({
-        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
+        data: { propertyId: "prop_sycamore", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
       });
       const toMove = await prisma.viewingSlot.create({
-        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T10:00:00`), durationMins: 30, maxAttendees: 5 },
+        data: { propertyId: "prop_sycamore", startsAt: new Date(`${futureDate()}T10:00:00`), durationMins: 30, maxAttendees: 5 },
       });
       const res = await request(app)
         .post("/api/slots/confirm")
@@ -206,12 +206,12 @@ describe("API", () => {
 
     it("allows a new slot in the time freed by a cancellation in the same payload", async () => {
       const cancelled = await prisma.viewingSlot.create({
-        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
+        data: { propertyId: "prop_sycamore", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
       });
       const res = await request(app)
         .post("/api/slots/confirm")
         .send({
-          slots: [{ propertyId: "prop_maple", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 }],
+          slots: [{ propertyId: "prop_sycamore", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 }],
           inviteeLeadIds: [],
           cancelSlotIds: [cancelled.id],
         });
@@ -220,14 +220,14 @@ describe("API", () => {
 
     it("adds invitees to an existing viewing — invitations only, no new slots", async () => {
       const slot = await prisma.viewingSlot.create({
-        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
+        data: { propertyId: "prop_sycamore", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
       });
       const res = await request(app)
         .post("/api/slots/confirm")
         .send({
           slots: [],
           inviteeLeadIds: [],
-          addInvitees: [{ slotId: slot.id, leadIds: ["lead_johnson", "lead_patel"] }],
+          addInvitees: [{ slotId: slot.id, leadIds: ["lead_kavanagh", "lead_sharma"] }],
         });
 
       expect(res.status).toBe(201);
@@ -241,10 +241,10 @@ describe("API", () => {
 
     it("never re-invites: already-invited leads keep their invitation (and its link) untouched", async () => {
       const slot = await prisma.viewingSlot.create({
-        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
+        data: { propertyId: "prop_sycamore", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
       });
       const existing = await prisma.invitation.create({
-        data: { slotId: slot.id, leadId: "lead_johnson", status: "ACCEPTED", message: "already sent" },
+        data: { slotId: slot.id, leadId: "lead_kavanagh", status: "ACCEPTED", message: "already sent" },
       });
 
       const res = await request(app)
@@ -252,8 +252,8 @@ describe("API", () => {
         .send({
           slots: [],
           inviteeLeadIds: [],
-          // lead_johnson repeated within the payload AND already invited in the DB
-          addInvitees: [{ slotId: slot.id, leadIds: ["lead_johnson", "lead_johnson", "lead_murphy"] }],
+          // lead_kavanagh repeated within the payload AND already invited in the DB
+          addInvitees: [{ slotId: slot.id, leadIds: ["lead_kavanagh", "lead_kavanagh", "lead_murphy"] }],
         });
 
       expect(res.status).toBe(201);
@@ -269,13 +269,13 @@ describe("API", () => {
 
     it("reports the targeted viewing even when everyone named was already invited", async () => {
       const slot = await prisma.viewingSlot.create({
-        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
+        data: { propertyId: "prop_sycamore", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
       });
-      await prisma.invitation.create({ data: { slotId: slot.id, leadId: "lead_johnson" } });
+      await prisma.invitation.create({ data: { slotId: slot.id, leadId: "lead_kavanagh" } });
 
       const res = await request(app)
         .post("/api/slots/confirm")
-        .send({ slots: [], inviteeLeadIds: [], addInvitees: [{ slotId: slot.id, leadIds: ["lead_johnson"] }] });
+        .send({ slots: [], inviteeLeadIds: [], addInvitees: [{ slotId: slot.id, leadIds: ["lead_kavanagh"] }] });
 
       expect(res.status).toBe(201);
       expect(res.body.invitedTo).toHaveLength(1);
@@ -284,7 +284,7 @@ describe("API", () => {
 
     it("rejects addInvitees contradictions and forged references", async () => {
       const slot = await prisma.viewingSlot.create({
-        data: { propertyId: "prop_maple", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
+        data: { propertyId: "prop_sycamore", startsAt: new Date(`${futureDate()}T14:00:00`), durationMins: 30, maxAttendees: 5 },
       });
 
       // Inviting to a viewing the same payload cancels is a contradiction, not a 500.
@@ -294,13 +294,13 @@ describe("API", () => {
           slots: [],
           inviteeLeadIds: [],
           cancelSlotIds: [slot.id],
-          addInvitees: [{ slotId: slot.id, leadIds: ["lead_johnson"] }],
+          addInvitees: [{ slotId: slot.id, leadIds: ["lead_kavanagh"] }],
         });
       expect(contradiction.status).toBe(422);
 
       const forgedSlot = await request(app)
         .post("/api/slots/confirm")
-        .send({ slots: [], inviteeLeadIds: [], addInvitees: [{ slotId: "slot_forged", leadIds: ["lead_johnson"] }] });
+        .send({ slots: [], inviteeLeadIds: [], addInvitees: [{ slotId: "slot_forged", leadIds: ["lead_kavanagh"] }] });
       expect(forgedSlot.status).toBe(422);
 
       const forgedLead = await request(app)
@@ -311,11 +311,11 @@ describe("API", () => {
 
     it("rejects invitations to a viewing that already started", async () => {
       const past = await prisma.viewingSlot.create({
-        data: { propertyId: "prop_maple", startsAt: new Date(Date.now() - 60 * 60 * 1000), durationMins: 30, maxAttendees: 5 },
+        data: { propertyId: "prop_sycamore", startsAt: new Date(Date.now() - 60 * 60 * 1000), durationMins: 30, maxAttendees: 5 },
       });
       const res = await request(app)
         .post("/api/slots/confirm")
-        .send({ slots: [], inviteeLeadIds: [], addInvitees: [{ slotId: past.id, leadIds: ["lead_johnson"] }] });
+        .send({ slots: [], inviteeLeadIds: [], addInvitees: [{ slotId: past.id, leadIds: ["lead_kavanagh"] }] });
       expect(res.status).toBe(422);
     });
   });
@@ -325,8 +325,8 @@ describe("API", () => {
       const confirm = await request(app)
         .post("/api/slots/confirm")
         .send({
-          slots: [{ propertyId: "prop_maple", date: futureDate(), startTime: "15:00", durationMins: 30, maxAttendees: 1 }],
-          inviteeLeadIds: ["lead_johnson", "lead_patel"],
+          slots: [{ propertyId: "prop_sycamore", date: futureDate(), startTime: "15:00", durationMins: 30, maxAttendees: 1 }],
+          inviteeLeadIds: ["lead_kavanagh", "lead_sharma"],
         });
       return confirm.body as {
         slots: { id: string }[];
@@ -338,11 +338,11 @@ describe("API", () => {
       const { invitations } = await createSlotWithInvites();
       const res = await request(app)
         .post(`/api/invitations/${invitations[0]!.id}/approve`)
-        .send({ message: "Hi Sarah — we'd love to show you 22 Maple Street on Tuesday at 3pm." });
+        .send({ message: "Hi Sarah — we'd love to show you 17 Sycamore Lane on Tuesday at 3pm." });
 
       expect(res.status).toBe(200);
       const view = await request(app).get(`/api/invitations/${invitations[0]!.id}`);
-      expect(view.body.message).toContain("Maple Street");
+      expect(view.body.message).toContain("Sycamore Lane");
       expect(view.body.spotsRemaining).toBe(1);
     });
 
@@ -353,7 +353,7 @@ describe("API", () => {
       await request(app)
         .post("/api/slots/confirm")
         .send({
-          slots: [{ propertyId: "prop_maple", date: futureDate(14), startTime: "15:00", durationMins: 30, maxAttendees: 5 }],
+          slots: [{ propertyId: "prop_sycamore", date: futureDate(14), startTime: "15:00", durationMins: 30, maxAttendees: 5 }],
           inviteeLeadIds: [],
         });
 
@@ -388,8 +388,8 @@ describe("API", () => {
         new MockLlm([
           {
             drafts: [
-              { leadId: "lead_johnson", message: "Hi Sarah — viewing at 22 Maple Street this Tuesday; parking is easy on the street, which I know matters to you. Spaces are limited so do confirm." },
-              { leadId: "lead_patel", message: "Hi Priya — we have an evening-friendly viewing at 22 Maple Street; it's a short walk from the hospital. Spaces are limited so do confirm." },
+              { leadId: "lead_kavanagh", message: "Hi Sarah — viewing at 17 Sycamore Lane this Tuesday; parking is easy on the street, which I know matters to you. Spaces are limited so do confirm." },
+              { leadId: "lead_sharma", message: "Hi Priya — we have an evening-friendly viewing at 17 Sycamore Lane; it's a short walk from the hospital. Spaces are limited so do confirm." },
             ],
           },
         ])
@@ -397,7 +397,7 @@ describe("API", () => {
 
       const res = await request(app)
         .post("/api/invitations/draft")
-        .send({ slotId: slots[0]!.id, leadIds: ["lead_johnson", "lead_patel"] });
+        .send({ slotId: slots[0]!.id, leadIds: ["lead_kavanagh", "lead_sharma"] });
 
       expect(res.status).toBe(200);
       expect(res.body.drafts).toHaveLength(2);
@@ -411,8 +411,8 @@ describe("API", () => {
       const confirm = await request(app)
         .post("/api/slots/confirm")
         .send({
-          slots: [{ propertyId: "prop_maple", date: futureDate(), startTime: "17:30", durationMins: 30, maxAttendees: 5 }],
-          inviteeLeadIds: ["lead_johnson", "lead_patel"],
+          slots: [{ propertyId: "prop_sycamore", date: futureDate(), startTime: "17:30", durationMins: 30, maxAttendees: 5 }],
+          inviteeLeadIds: ["lead_kavanagh", "lead_sharma"],
         });
       return confirm.body as { slots: { id: string }[] };
     }

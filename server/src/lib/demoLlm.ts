@@ -140,7 +140,7 @@ export class DemoLlmClient implements LlmClient {
       const reply =
         booked.length > 0
           ? `There ${booked.length === 1 ? "is 1 upcoming viewing" : `are ${booked.length} upcoming viewings`} booked — the Viewings page has the full list. ` +
-            `I can create, cancel or move them from here: try "cancel Tuesday's viewings at 22 Maple Street" or "move the 5pm viewing to 7pm".`
+            `I can create, cancel or move them from here: try "cancel Tuesday's viewings at 17 Sycamore Lane" or "move the 5pm viewing to 7pm".`
           : `There are no upcoming viewings yet. Describe what you need — property, day, who to invite — and I'll set them up.`;
       return { slots: [], inviteeLeadIds: [], clarifications: [], assumptions: [], reply };
     }
@@ -158,7 +158,7 @@ export class DemoLlmClient implements LlmClient {
       };
 
     // Leads: match on ANY name token — first name, surname, or full name — so
-    // "invite Emma" works as well as "invite the Johnson lead". (Name tokens only:
+    // "invite Emma" works as well as "invite the Kavanagh lead". (Name tokens only:
     // the label's notes portion is stripped so note words can't false-match.)
     const invitees = leads.filter((l) => {
       const name = l.label.split(" (")[0]!.trim().toLowerCase();

@@ -8,7 +8,7 @@ import type { InvitationView, SlotWithCounts } from "@lette/shared";
 
 const slot: SlotWithCounts = {
   id: "slot_1",
-  property: { id: "prop_maple", name: "22 Maple Street", address: "22 Maple Street, Dublin 6" },
+  property: { id: "prop_sycamore", name: "17 Sycamore Lane", address: "17 Sycamore Lane, Dublin 6" },
   startsAt: "2027-01-12T14:00:00.000Z",
   durationMins: 30,
   maxAttendees: 5,
@@ -18,8 +18,8 @@ const slot: SlotWithCounts = {
 const invitation: InvitationView = {
   id: "inv_1",
   status: "PENDING",
-  message: "Hi Sarah — we'd love to show you 22 Maple Street.",
-  lead: { id: "lead_johnson", name: "Sarah Johnson", email: "sarah@example.com", notes: null },
+  message: "Hi Sarah — we'd love to show you 17 Sycamore Lane.",
+  lead: { id: "lead_kavanagh", name: "Sarah Kavanagh", email: "sarah@example.com", notes: null },
   slot,
   spotsRemaining: 3,
 };

@@ -65,7 +65,7 @@ router.post("/:id/approve", async (req, res, next) => {
   }
 });
 
-// Invitee-facing view: the invitation id doubles as the access token (stubbed auth per brief).
+// Invitee-facing view: the invitation id doubles as the access token (deliberate stub — see DESIGN.md).
 router.get("/:id", async (req, res, next) => {
   try {
     const invitation = await prisma.invitation.findUnique({

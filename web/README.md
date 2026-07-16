@@ -21,7 +21,7 @@ npm run typecheck
   Her closing turn is the structured preview — slots + invitees + her spoken assumptions —
   which you confirm before anything exists, then draft/edit/approve the AI-written
   invitations. Each sent invitation shows its invite link for the demo. Existing viewings
-  are managed the same way — "cancel Tuesday's viewings at Maple Street", "move the 5pm
+  are managed the same way — "cancel Tuesday's viewings at Sycamore Lane", "move the 5pm
   to 7pm" — with cancels and moves shown in the preview (including who already accepted)
   before anything is applied.
 - `/invite/:id` — the invitee's page: personalised message, live capacity

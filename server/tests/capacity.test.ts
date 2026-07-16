@@ -6,7 +6,7 @@ import { resetDb, seedBasics } from "./helpers.js";
 async function makeSlot(opts: { maxAttendees: number; hoursFromNow?: number }) {
   return prisma.viewingSlot.create({
     data: {
-      propertyId: "prop_maple",
+      propertyId: "prop_sycamore",
       startsAt: new Date(Date.now() + (opts.hoursFromNow ?? 48) * 3600 * 1000),
       durationMins: 30,
       maxAttendees: opts.maxAttendees,
@@ -26,7 +26,7 @@ describe("capacity enforcement", () => {
 
   it("accepts while seats remain and reports spots remaining", async () => {
     const slot = await makeSlot({ maxAttendees: 2 });
-    const inv = await invite(slot.id, "lead_johnson");
+    const inv = await invite(slot.id, "lead_kavanagh");
 
     const outcome = await acceptInvitation(inv.id);
     expect(outcome.kind).toBe("accepted");
@@ -35,7 +35,7 @@ describe("capacity enforcement", () => {
 
   it("is idempotent: accepting twice neither errors nor eats a second seat", async () => {
     const slot = await makeSlot({ maxAttendees: 2 });
-    const inv = await invite(slot.id, "lead_johnson");
+    const inv = await invite(slot.id, "lead_kavanagh");
 
     await acceptInvitation(inv.id);
     const second = await acceptInvitation(inv.id);
@@ -51,10 +51,10 @@ describe("capacity enforcement", () => {
     // A past slot and a full slot must never be suggested.
     await makeSlot({ maxAttendees: 5, hoursFromNow: -24 });
 
-    const winner = await invite(fullSlot.id, "lead_johnson");
+    const winner = await invite(fullSlot.id, "lead_kavanagh");
     await acceptInvitation(winner.id);
 
-    const loser = await invite(fullSlot.id, "lead_patel");
+    const loser = await invite(fullSlot.id, "lead_sharma");
     const outcome = await acceptInvitation(loser.id);
 
     expect(outcome.kind).toBe("full");
@@ -65,8 +65,8 @@ describe("capacity enforcement", () => {
 
   it("closes the race: two concurrent accepts for the last seat produce exactly one winner", async () => {
     const slot = await makeSlot({ maxAttendees: 1 });
-    const a = await invite(slot.id, "lead_johnson");
-    const b = await invite(slot.id, "lead_patel");
+    const a = await invite(slot.id, "lead_kavanagh");
+    const b = await invite(slot.id, "lead_sharma");
 
     const [ra, rb] = await Promise.all([acceptInvitation(a.id), acceptInvitation(b.id)]);
     const kinds = [ra.kind, rb.kind].sort();
@@ -80,9 +80,9 @@ describe("capacity enforcement", () => {
     const fullSlot = await makeSlot({ maxAttendees: 1 });
     const altSlot = await makeSlot({ maxAttendees: 1, hoursFromNow: 72 });
 
-    const winner = await invite(fullSlot.id, "lead_johnson");
+    const winner = await invite(fullSlot.id, "lead_kavanagh");
     await acceptInvitation(winner.id);
-    const loser = await invite(fullSlot.id, "lead_patel");
+    const loser = await invite(fullSlot.id, "lead_sharma");
 
     const outcome = await acceptAlternative(loser.id, altSlot.id);
     expect(outcome.kind).toBe("accepted");
@@ -100,9 +100,9 @@ describe("capacity enforcement", () => {
     const altWinner = await invite(altSlot.id, "lead_murphy");
     await acceptInvitation(altWinner.id);
 
-    const winner = await invite(fullSlot.id, "lead_johnson");
+    const winner = await invite(fullSlot.id, "lead_kavanagh");
     await acceptInvitation(winner.id);
-    const loser = await invite(fullSlot.id, "lead_patel");
+    const loser = await invite(fullSlot.id, "lead_sharma");
 
     const outcome = await acceptAlternative(loser.id, altSlot.id);
     expect(outcome.kind).toBe("full");
@@ -116,10 +116,10 @@ describe("capacity enforcement", () => {
     const fullSlot = await makeSlot({ maxAttendees: 1 });
     const altSlot = await makeSlot({ maxAttendees: 5, hoursFromNow: 72 });
 
-    const winner = await invite(fullSlot.id, "lead_johnson");
+    const winner = await invite(fullSlot.id, "lead_kavanagh");
     await acceptInvitation(winner.id);
-    const urlInvitation = await invite(fullSlot.id, "lead_patel");
-    const duplicate = await invite(altSlot.id, "lead_patel"); // pre-existing row for the target
+    const urlInvitation = await invite(fullSlot.id, "lead_sharma");
+    const duplicate = await invite(altSlot.id, "lead_sharma"); // pre-existing row for the target
 
     const outcome = await acceptAlternative(urlInvitation.id, altSlot.id);
     expect(outcome.kind).toBe("accepted");
@@ -133,14 +133,14 @@ describe("capacity enforcement", () => {
     expect(swapped.slotId).toBe(fullSlot.id);
     expect(swapped.status).toBe("PENDING");
     // Exactly one seat is held across the pair.
-    const accepted = await prisma.invitation.count({ where: { leadId: "lead_patel", status: "ACCEPTED" } });
+    const accepted = await prisma.invitation.count({ where: { leadId: "lead_sharma", status: "ACCEPTED" } });
     expect(accepted).toBe(1);
   });
 
   it("never moves an already-accepted invitee via a stale full-slot page", async () => {
     const slot = await makeSlot({ maxAttendees: 2 });
     const other = await makeSlot({ maxAttendees: 5, hoursFromNow: 72 });
-    const inv = await invite(slot.id, "lead_johnson");
+    const inv = await invite(slot.id, "lead_kavanagh");
     await acceptInvitation(inv.id);
 
     const outcome = await acceptAlternative(inv.id, other.id);
@@ -155,7 +155,7 @@ describe("capacity enforcement", () => {
     const slot = await makeSlot({ maxAttendees: 5 });
     const other = await makeSlot({ maxAttendees: 5, hoursFromNow: 72 });
     const inv = await prisma.invitation.create({
-      data: { slotId: slot.id, leadId: "lead_johnson", status: "DECLINED" },
+      data: { slotId: slot.id, leadId: "lead_kavanagh", status: "DECLINED" },
     });
 
     expect((await acceptInvitation(inv.id)).kind).toBe("declined");

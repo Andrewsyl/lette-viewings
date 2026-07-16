@@ -20,7 +20,7 @@ import { CreatedPanel } from "./admin/CreatedPanel";
 // parse/confirm orchestration; the visual panels live in ./admin/, one file each.
 
 const EXAMPLES = [
-  "Set up three 30-minute viewings for 22 Maple Street next Tuesday afternoon, max 5 people each, and invite the Johnson and Patel leads",
+  "Set up three 30-minute viewings for 17 Sycamore Lane next Tuesday afternoon, max 5 people each, and invite the Kavanagh and Sharma leads",
   "Two viewings at Riverpoint Apartments on Friday morning, 20 minutes each, invite Murphy",
   "Some viewings next week sometime for Botanic View",
 ];
@@ -419,7 +419,7 @@ export default function AdminPage() {
                   onSubmit={(e) => {
                     e.preventDefault();
                     // Toggled chips and any typed text travel as one comma-separated
-                    // answer — "Sarah Johnson, Priya Patel" reads like a reply, and the
+                    // answer — "Sarah Kavanagh, Priya Sharma" reads like a reply, and the
                     // model handles lists natively.
                     const combined = [...selected, reply.trim()].filter(Boolean).join(", ");
                     if (clarifications.length > 0) {

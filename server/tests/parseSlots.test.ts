@@ -15,10 +15,10 @@ describe("parseSlotRequest", () => {
 
   it("accepts a valid proposal and logs the call", async () => {
     const llm = new MockLlm([validProposal()]);
-    const result = await parseSlotRequest("three slots for Maple St at 2pm", llm);
+    const result = await parseSlotRequest("three slots for Sycamore Lane at 2pm", llm);
 
     expect(result.proposal.slots).toHaveLength(2);
-    expect(result.proposal.inviteeLeadIds).toEqual(["lead_johnson", "lead_patel"]);
+    expect(result.proposal.inviteeLeadIds).toEqual(["lead_kavanagh", "lead_sharma"]);
     expect(llm.requests).toHaveLength(1);
 
     const log = await prisma.llmCallLog.findFirstOrThrow();
@@ -64,7 +64,7 @@ describe("parseSlotRequest", () => {
   it("rejects slots in the past", async () => {
     const bad = {
       ...validProposal(),
-      slots: [{ propertyId: "prop_maple", date: "2020-01-01", startTime: "10:00", durationMins: 30, maxAttendees: 5 }],
+      slots: [{ propertyId: "prop_sycamore", date: "2020-01-01", startTime: "10:00", durationMins: 30, maxAttendees: 5 }],
     };
     const llm = new MockLlm([bad, bad]);
     await expect(parseSlotRequest("slots for 2020", llm)).rejects.toBeInstanceOf(LlmOutputError);
@@ -73,7 +73,7 @@ describe("parseSlotRequest", () => {
   it("rejects out-of-bounds duration and capacity", async () => {
     const bad = {
       ...validProposal(),
-      slots: [{ propertyId: "prop_maple", date: futureDate(), startTime: "10:00", durationMins: 0, maxAttendees: 5000 }],
+      slots: [{ propertyId: "prop_sycamore", date: futureDate(), startTime: "10:00", durationMins: 0, maxAttendees: 5000 }],
     };
     const llm = new MockLlm([bad, bad]);
     await expect(parseSlotRequest("a strange slot", llm)).rejects.toBeInstanceOf(LlmOutputError);
@@ -118,18 +118,18 @@ describe("parseSlotRequest", () => {
   it("grounds already-booked viewings in the prompt so the model can flag clashes", async () => {
     await prisma.viewingSlot.create({
       data: {
-        propertyId: "prop_maple",
+        propertyId: "prop_sycamore",
         startsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         durationMins: 30,
         maxAttendees: 5,
       },
     });
     const llm = new MockLlm([validProposal()]);
-    await parseSlotRequest("more slots at Maple St", llm);
+    await parseSlotRequest("more slots at Sycamore Lane", llm);
 
     const system = llm.requests[0]!.system;
     expect(system).toContain("ALREADY BOOKED");
-    expect(system).toContain("prop_maple");
+    expect(system).toContain("prop_sycamore");
   });
 
   it("retries once when a follow-up question got no reply, and takes the answered attempt", async () => {
@@ -139,7 +139,7 @@ describe("parseSlotRequest", () => {
     const answered = { ...validProposal(), reply: "Yes — each lead gets one invitation per viewing." };
     const llm = new MockLlm([silent, answered]);
     const result = await parseSlotRequest(
-      "two viewings at Maple St on Tuesday, invite Johnson\n\nwait, will this send 2 invites to the same person?",
+      "two viewings at Sycamore Lane on Tuesday, invite Kavanagh\n\nwait, will this send 2 invites to the same person?",
       llm
     );
     expect(llm.requests).toHaveLength(2);
@@ -155,14 +155,14 @@ describe("parseSlotRequest", () => {
     // A response with an open question must carry no slots.
     const withBoth = {
       slots: [
-        { propertyId: "prop_maple", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 },
-        { propertyId: "prop_maple", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 },
+        { propertyId: "prop_sycamore", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 },
+        { propertyId: "prop_sycamore", date: futureDate(), startTime: "14:00", durationMins: 30, maxAttendees: 5 },
       ],
       inviteeLeadIds: [],
       window: { earliest: "09:00", latest: "20:00" },
       clarifications: [{ question: "Did you really mean two viewings at the same time?" }],
     };
-    const result = await parseSlotRequest("two viewings at Maple St both at 2pm", new MockLlm([withBoth]));
+    const result = await parseSlotRequest("two viewings at Sycamore Lane both at 2pm", new MockLlm([withBoth]));
     expect(result.proposal.slots).toHaveLength(0);
     expect(result.proposal.clarifications).toHaveLength(1);
   });
@@ -175,7 +175,7 @@ describe("parseSlotRequest", () => {
       clarifications: [
         { question: "Which day next week?", options: ["Monday 20 July", "Tuesday 21 July"] },
         { question: "What time of day?", options: ["morning", "afternoon", "evening"] },
-        { question: "Who should I invite?", options: ["Sarah Johnson", "Priya Patel"], multiple: true },
+        { question: "Who should I invite?", options: ["Sarah Kavanagh", "Priya Sharma"], multiple: true },
       ],
     };
     const result = await parseSlotRequest("some viewings next week", new MockLlm([multi]));
@@ -187,7 +187,7 @@ describe("parseSlotRequest", () => {
     // The model shrugs at "what's booked this week?" — an empty proposal with nothing to
     // say. Vera must never render literally nothing; the retry makes `reply` required.
     const empty = { slots: [], inviteeLeadIds: [], clarifications: [], window: { earliest: "09:00", latest: "20:00" } };
-    const answered = { ...empty, reply: "Two viewings this week: Friday at 9am and 2pm, both at 22 Maple Street." };
+    const answered = { ...empty, reply: "Two viewings this week: Friday at 9am and 2pm, both at 17 Sycamore Lane." };
     const llm = new MockLlm([empty, answered]);
     const result = await parseSlotRequest("what's booked this week?", llm);
     expect(llm.requests).toHaveLength(2);
@@ -198,11 +198,11 @@ describe("parseSlotRequest", () => {
   it("does not retry when the question is the whole request, or when a reply came back", async () => {
     // Single-line instruction-questions are instructions (no reply owed)…
     const llm = new MockLlm([validProposal()]);
-    await parseSlotRequest("can you set up two viewings at Maple St on Tuesday?", llm);
+    await parseSlotRequest("can you set up two viewings at Sycamore Lane on Tuesday?", llm);
     expect(llm.requests).toHaveLength(1);
     // …and an answered follow-up needs no second call.
     const answeredLlm = new MockLlm([{ ...validProposal(), reply: "Yes." }]);
-    await parseSlotRequest("two viewings at Maple St\n\nis this ok?", answeredLlm);
+    await parseSlotRequest("two viewings at Sycamore Lane\n\nis this ok?", answeredLlm);
     expect(answeredLlm.requests).toHaveLength(1);
   });
 
@@ -221,7 +221,7 @@ describe("parseSlotRequest", () => {
     // detail we don't guess — clear the plan and ask, deterministically.
     const noTimeGiven = validProposal(); // slots at 14:00, but the request below has no time
     const result = await parseSlotRequest(
-      "three viewings at Maple Street next Tuesday, invite Johnson and Patel",
+      "three viewings at Sycamore Lane next Tuesday, invite Kavanagh and Sharma",
       new MockLlm([noTimeGiven])
     );
     expect(result.proposal.slots).toHaveLength(0);
@@ -232,10 +232,10 @@ describe("parseSlotRequest", () => {
 
   it("does not ask for a time when the request already gave one", async () => {
     for (const text of [
-      "three viewings at Maple Street next Tuesday at 2pm, invite Johnson",
-      "three viewings at Maple Street next Tuesday afternoon, invite Johnson",
-      "a viewing at Maple Street next Tuesday at 14:00, invite Johnson",
-      "a viewing at Maple Street next Tuesday morning, invite Johnson",
+      "three viewings at Sycamore Lane next Tuesday at 2pm, invite Kavanagh",
+      "three viewings at Sycamore Lane next Tuesday afternoon, invite Kavanagh",
+      "a viewing at Sycamore Lane next Tuesday at 14:00, invite Kavanagh",
+      "a viewing at Sycamore Lane next Tuesday morning, invite Kavanagh",
     ]) {
       const result = await parseSlotRequest(text, new MockLlm([validProposal()]));
       expect(result.proposal.slots.length).toBeGreaterThan(0);
@@ -246,24 +246,24 @@ describe("parseSlotRequest", () => {
   it("deduplicates repeated invitee ids ('inviting Conor and Conor' must never render)", async () => {
     const proposal = {
       ...validProposal(),
-      inviteeLeadIds: ["lead_johnson", "lead_johnson", "lead_patel"],
+      inviteeLeadIds: ["lead_kavanagh", "lead_kavanagh", "lead_sharma"],
     };
-    const result = await parseSlotRequest("two viewings, invite Johnson and Patel", new MockLlm([proposal]));
-    expect(result.proposal.inviteeLeadIds).toEqual(["lead_johnson", "lead_patel"]);
+    const result = await parseSlotRequest("two viewings, invite Kavanagh and Sharma", new MockLlm([proposal]));
+    expect(result.proposal.inviteeLeadIds).toEqual(["lead_kavanagh", "lead_sharma"]);
   });
 
   it("deterministically repairs a proposal that double-books an existing viewing", async () => {
     // Existing booking exactly where validProposal()'s first slot lands (14:00).
     await prisma.viewingSlot.create({
       data: {
-        propertyId: "prop_maple",
+        propertyId: "prop_sycamore",
         startsAt: new Date(`${futureDate()}T14:00:00`),
         durationMins: 30,
         maxAttendees: 5,
       },
     });
     const llm = new MockLlm([validProposal()]);
-    const result = await parseSlotRequest("slots at Maple St at 2pm", llm);
+    const result = await parseSlotRequest("slots at Sycamore Lane at 2pm", llm);
 
     // Repair-first, window-bounded: the clashing 14:00 slot moves to the earliest free
     // time INSIDE the admin's stated window (13:00), the free 14:30 slot stays put…
@@ -276,7 +276,7 @@ describe("parseSlotRequest", () => {
   it("drops model assumptions that narrate a moved slot's original time", async () => {
     await prisma.viewingSlot.create({
       data: {
-        propertyId: "prop_maple",
+        propertyId: "prop_sycamore",
         startsAt: new Date(`${futureDate()}T14:00:00`),
         durationMins: 30,
         maxAttendees: 5,
@@ -292,7 +292,7 @@ describe("parseSlotRequest", () => {
         "You didn't give a duration, so I went with 30 minutes.",
       ],
     };
-    const result = await parseSlotRequest("slots at Maple St in the afternoon", new MockLlm([proposal]));
+    const result = await parseSlotRequest("slots at Sycamore Lane in the afternoon", new MockLlm([proposal]));
 
     expect(result.proposal.slots.map((s) => s.startTime)).toEqual(["13:00", "14:30"]);
     const joined = result.proposal.assumptions.join(" ");
@@ -309,7 +309,7 @@ describe("parseSlotRequest", () => {
       const mins = i % 2 === 0 ? "00" : "30";
       await prisma.viewingSlot.create({
         data: {
-          propertyId: "prop_maple",
+          propertyId: "prop_sycamore",
           startsAt: new Date(`${date}T${String(hour).padStart(2, "0")}:${mins}:00`),
           durationMins: 30,
           maxAttendees: 5,
@@ -317,7 +317,7 @@ describe("parseSlotRequest", () => {
       });
     }
     const llm = new MockLlm([validProposal()]);
-    const result = await parseSlotRequest("slots at Maple St in the afternoon", llm);
+    const result = await parseSlotRequest("slots at Sycamore Lane in the afternoon", llm);
 
     // Going outside the window is never a silent repair — it's the admin's call,
     // offered with the nearest out-of-window times and an escape hatch.
@@ -330,7 +330,7 @@ describe("parseSlotRequest", () => {
   it("accepts cancellations referencing grounded viewing ids and returns their details", async () => {
     const existing = await prisma.viewingSlot.create({
       data: {
-        propertyId: "prop_maple",
+        propertyId: "prop_sycamore",
         startsAt: new Date(`${futureDate()}T15:00:00`),
         durationMins: 30,
         maxAttendees: 5,
@@ -339,12 +339,12 @@ describe("parseSlotRequest", () => {
     const llm = new MockLlm([
       { slots: [], inviteeLeadIds: [], clarifications: [], cancelSlotIds: [existing.id] },
     ]);
-    const result = await parseSlotRequest("cancel the 3pm viewing at Maple St", llm);
+    const result = await parseSlotRequest("cancel the 3pm viewing at Sycamore Lane", llm);
 
     expect(result.proposal.cancelSlotIds).toEqual([existing.id]);
     // The preview payload carries what's about to be cancelled.
     expect(result.existingSlots?.[0]?.id).toBe(existing.id);
-    expect(result.existingSlots?.[0]?.property.name).toBe("22 Maple Street");
+    expect(result.existingSlots?.[0]?.property.name).toBe("17 Sycamore Lane");
   });
 
   it("rejects cancellations of hallucinated viewing ids", async () => {
@@ -356,7 +356,7 @@ describe("parseSlotRequest", () => {
   it("accepts invitees for an existing viewing, dedupes them, and returns the viewing's details", async () => {
     const existing = await prisma.viewingSlot.create({
       data: {
-        propertyId: "prop_maple",
+        propertyId: "prop_sycamore",
         startsAt: new Date(`${futureDate()}T14:00:00`),
         durationMins: 30,
         maxAttendees: 5,
@@ -367,13 +367,13 @@ describe("parseSlotRequest", () => {
         slots: [],
         inviteeLeadIds: [],
         clarifications: [],
-        addInvitees: [{ slotId: existing.id, leadIds: ["lead_johnson", "lead_johnson", "lead_patel"] }],
+        addInvitees: [{ slotId: existing.id, leadIds: ["lead_kavanagh", "lead_kavanagh", "lead_sharma"] }],
       },
     ]);
     const result = await parseSlotRequest("send a few more invites to the 2pm slot", llm);
 
     expect(result.proposal.addInvitees).toEqual([
-      { slotId: existing.id, leadIds: ["lead_johnson", "lead_patel"] },
+      { slotId: existing.id, leadIds: ["lead_kavanagh", "lead_sharma"] },
     ]);
     // An invite-only turn is an action, not a dead end — no forced-reply retry fired.
     expect(llm.requests).toHaveLength(1);
@@ -384,13 +384,13 @@ describe("parseSlotRequest", () => {
   it("rejects invitees pointed at hallucinated viewing ids or hallucinated leads", async () => {
     const existing = await prisma.viewingSlot.create({
       data: {
-        propertyId: "prop_maple",
+        propertyId: "prop_sycamore",
         startsAt: new Date(`${futureDate()}T14:00:00`),
         durationMins: 30,
         maxAttendees: 5,
       },
     });
-    const badSlot = { slots: [], inviteeLeadIds: [], clarifications: [], addInvitees: [{ slotId: "slot_invented", leadIds: ["lead_johnson"] }] };
+    const badSlot = { slots: [], inviteeLeadIds: [], clarifications: [], addInvitees: [{ slotId: "slot_invented", leadIds: ["lead_kavanagh"] }] };
     await expect(parseSlotRequest("invite more people", new MockLlm([badSlot, badSlot]))).rejects.toBeInstanceOf(LlmOutputError);
 
     const badLead = { slots: [], inviteeLeadIds: [], clarifications: [], addInvitees: [{ slotId: existing.id, leadIds: ["lead_invented"] }] };
@@ -400,7 +400,7 @@ describe("parseSlotRequest", () => {
   it("turns a reschedule onto an occupied time into a question, not a double-booking", async () => {
     const toMove = await prisma.viewingSlot.create({
       data: {
-        propertyId: "prop_maple",
+        propertyId: "prop_sycamore",
         startsAt: new Date(`${futureDate()}T10:00:00`),
         durationMins: 30,
         maxAttendees: 5,
@@ -408,7 +408,7 @@ describe("parseSlotRequest", () => {
     });
     await prisma.viewingSlot.create({
       data: {
-        propertyId: "prop_maple",
+        propertyId: "prop_sycamore",
         startsAt: new Date(`${futureDate()}T15:00:00`),
         durationMins: 30,
         maxAttendees: 5,

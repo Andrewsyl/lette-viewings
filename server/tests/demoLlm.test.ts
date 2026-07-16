@@ -18,19 +18,19 @@ describe("DemoLlmClient through the real parse pipeline", () => {
 
   it("produces a proposal that passes the full validation fence", async () => {
     const result = await parseSlotRequest(
-      "three 30-minute viewing slots for 22 Maple Street next Tuesday afternoon, max 5, invite Johnson and Patel",
+      "three 30-minute viewing slots for 17 Sycamore Lane next Tuesday afternoon, max 5, invite Kavanagh and Sharma",
       new DemoLlmClient()
     );
     expect(result.proposal.slots).toHaveLength(3);
     expect(result.proposal.inviteeLeadIds).toEqual(
-      expect.arrayContaining(["lead_johnson", "lead_patel"])
+      expect.arrayContaining(["lead_kavanagh", "lead_sharma"])
     );
     expect(result.proposal.clarifications).toHaveLength(0);
   });
 
   it("matches leads by first name, not just surname", async () => {
     const result = await parseSlotRequest(
-      "two slots at Maple Street next Tuesday, invite Emma",
+      "two slots at Sycamore Lane next Tuesday, invite Emma",
       new DemoLlmClient()
     );
     expect(result.proposal.inviteeLeadIds).toContain("lead_walsh");
@@ -38,7 +38,7 @@ describe("DemoLlmClient through the real parse pipeline", () => {
 
   it("asks instead of silently dropping an unmatched invitee", async () => {
     const result = await parseSlotRequest(
-      "slots at Maple Street next Tuesday, invite Bob",
+      "slots at Sycamore Lane next Tuesday, invite Bob",
       new DemoLlmClient()
     );
     expect(result.proposal.inviteeLeadIds).toHaveLength(0);
@@ -47,7 +47,7 @@ describe("DemoLlmClient through the real parse pipeline", () => {
 
   it("asks about the unmatched person even when others matched (no partial silent drop)", async () => {
     const result = await parseSlotRequest(
-      "two slots at Maple Street next Tuesday, invite Emma and Bob",
+      "two slots at Sycamore Lane next Tuesday, invite Emma and Bob",
       new DemoLlmClient()
     );
     expect(result.proposal.clarifications.map((c) => c.question).join(" ")).toContain('"Bob"');
@@ -56,17 +56,17 @@ describe("DemoLlmClient through the real parse pipeline", () => {
 
   it("suggests the closest lead for a typo'd name, with a machine-usable correction", async () => {
     const result = await parseSlotRequest(
-      "two slots at Maple Street next Tuesday, invite Pryia",
+      "two slots at Sycamore Lane next Tuesday, invite Pryia",
       new DemoLlmClient()
     );
-    expect(result.proposal.clarifications.map((c) => c.question).join(" ")).toContain("Did you mean Priya Patel");
-    expect(result.proposal.corrections).toEqual([{ from: "Pryia", to: "Priya Patel" }]);
+    expect(result.proposal.clarifications.map((c) => c.question).join(" ")).toContain("Did you mean Priya Sharma");
+    expect(result.proposal.corrections).toEqual([{ from: "Pryia", to: "Priya Sharma" }]);
     expect(result.proposal.inviteeLeadIds).toHaveLength(0);
   });
 
   it("catches lowercase unknown names alongside a successful match (people type lowercase)", async () => {
     const result = await parseSlotRequest(
-      "two slots at Maple Street next Tuesday, invite emma and bob",
+      "two slots at Sycamore Lane next Tuesday, invite emma and bob",
       new DemoLlmClient()
     );
     expect(result.proposal.clarifications.map((c) => c.question).join(" ")).toContain('"bob"');
@@ -75,11 +75,11 @@ describe("DemoLlmClient through the real parse pipeline", () => {
 
   it("does not mistake weekdays or property words in the invite clause for names", async () => {
     const result = await parseSlotRequest(
-      "two slots next Tuesday afternoon, invite Johnson on Tuesday at Maple Street",
+      "two slots next Tuesday afternoon, invite Kavanagh on Tuesday at Sycamore Lane",
       new DemoLlmClient()
     );
     expect(result.proposal.clarifications).toHaveLength(0);
-    expect(result.proposal.inviteeLeadIds).toContain("lead_johnson");
+    expect(result.proposal.inviteeLeadIds).toContain("lead_kavanagh");
   });
 
   it("asks for a specific day on vague timing, with one-tap day options", async () => {
@@ -91,7 +91,7 @@ describe("DemoLlmClient through the real parse pipeline", () => {
 
   it("resolves once the vague request carries an answered clarification", async () => {
     const answered =
-      'some viewings next week sometime in the afternoon for Maple Street, invite Johnson\n\nClarification — "Which day would you like the viewings?": Friday';
+      'some viewings next week sometime in the afternoon for Sycamore Lane, invite Kavanagh\n\nClarification — "Which day would you like the viewings?": Friday';
     const result = await parseSlotRequest(answered, new DemoLlmClient());
     expect(result.proposal.clarifications).toHaveLength(0);
     expect(result.proposal.slots.length).toBeGreaterThan(0);
@@ -101,7 +101,7 @@ describe("DemoLlmClient through the real parse pipeline", () => {
 
   it("schedules on the day the admin actually named", async () => {
     const result = await parseSlotRequest(
-      "two viewings at Maple Street on Friday morning, invite Johnson",
+      "two viewings at Sycamore Lane on Friday morning, invite Kavanagh",
       new DemoLlmClient()
     );
     expect(new Date(result.proposal.slots[0]!.date).getDay()).toBe(5);
@@ -118,7 +118,7 @@ describe("DemoLlmClient through the real parse pipeline", () => {
   it("answers 'list viewings' from the grounded booked list", async () => {
     await prisma.viewingSlot.create({
       data: {
-        propertyId: "prop_maple",
+        propertyId: "prop_sycamore",
         startsAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
         durationMins: 30,
         maxAttendees: 5,
@@ -130,7 +130,7 @@ describe("DemoLlmClient through the real parse pipeline", () => {
 
   it("surfaces its defaults and readings as assumptions", async () => {
     const result = await parseSlotRequest(
-      "viewings at Maple Street next Tuesday afternoon, invite Johnson",
+      "viewings at Sycamore Lane next Tuesday afternoon, invite Kavanagh",
       new DemoLlmClient()
     );
     const joined = result.proposal.assumptions.join(" ");
