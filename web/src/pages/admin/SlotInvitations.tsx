@@ -14,6 +14,9 @@ export function SlotInvitations(props: {
   /** Optional annotation after the time/day line (e.g. "existing viewing"). */
   subtitle?: string;
   invitations: ConfirmResponse["invitations"];
+  /** Reports whether every invitation in this panel has been approved — lets the parent
+   *  close the loop once the whole batch is on its way. */
+  onAllApproved?: (slotId: string, allApproved: boolean) => void;
 }) {
   const [drafts, setDrafts] = useState<Record<string, string>>(
     () => savedDrafts.get(props.slotId)?.drafts ?? {}
@@ -27,6 +30,11 @@ export function SlotInvitations(props: {
   useEffect(() => {
     savedDrafts.set(props.slotId, { drafts, sent });
   }, [props.slotId, drafts, sent]);
+
+  const { onAllApproved, slotId, invitations } = props;
+  useEffect(() => {
+    onAllApproved?.(slotId, invitations.length > 0 && invitations.every((inv) => Boolean(sent[inv.id])));
+  }, [onAllApproved, slotId, invitations, sent]);
 
   const invitationByLead = new Map(props.invitations.map((inv) => [inv.lead.id, inv.id]));
 

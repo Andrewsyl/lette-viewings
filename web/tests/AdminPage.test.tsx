@@ -402,6 +402,10 @@ describe("AdminPage", () => {
     expect(await screen.findByText(/2 of 2 invitations approved/i)).toBeInTheDocument();
     expect(screen.getAllByText(/sent ✓/i)).toHaveLength(2);
     expect(screen.getAllByText(/preview invitation/i)).toHaveLength(2);
+    // The flow ENDS: once the whole batch is approved, Vera closes the loop with what
+    // went out and where to watch what happens next.
+    expect(await screen.findByText(/that's everything — all 2 invitations are on their way/i)).toBeInTheDocument();
+    expect(screen.getByText(/acceptances on the viewings page/i)).toBeInTheDocument();
   });
 
   it("offers a per-lead retry when a streamed draft fails", async () => {
