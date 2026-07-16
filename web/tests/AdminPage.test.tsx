@@ -396,7 +396,9 @@ describe("AdminPage", () => {
     await userEvent.click(await screen.findByRole("button", { name: /draft invitations with ai/i }));
 
     expect(await screen.findByText(/0 of 2 invitations approved/i)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /approve all 2 ready drafts/i }));
+    // The drafts settle a beat after the stream ends (the display smoother drains its
+    // buffer before a draft becomes editable/approvable) — so wait, don't grab.
+    await userEvent.click(await screen.findByRole("button", { name: /approve all 2 ready drafts/i }));
     expect(await screen.findByText(/2 of 2 invitations approved/i)).toBeInTheDocument();
     expect(screen.getAllByText(/sent ✓/i)).toHaveLength(2);
     expect(screen.getAllByText(/preview invitation/i)).toHaveLength(2);

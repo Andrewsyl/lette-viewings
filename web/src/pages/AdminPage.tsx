@@ -1056,19 +1056,67 @@ function SlotInvitations(props: {
 
   const invitationByLead = new Map(props.invitations.map((inv) => [inv.lead.id, inv.id]));
 
+  // --- Display smoothing for streamed drafts ------------------------------------
+  // The wire delivers text in multi-word chunks; pasting each one into the draft reads
+  // as blocks appearing, not typing. Deltas land in a per-draft buffer and one ticker
+  // reveals a few characters at a time, draining faster the further it falls behind —
+  // letter-flow when caught up, near-instant catch-up when not, worst case a beat
+  // behind the wire. Display pacing only, never fake progress: the moment a draft's
+  // buffer drains, its text is set to the server's final message verbatim, and error
+  // and fallback paths bypass the buffer entirely.
+  type SmoothTarget = { pending: string; final: string | null; onSettled: (() => void) | null };
+  const smoothTargets = useRef<Map<string, SmoothTarget>>(new Map());
+  const smoothTicker = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopTicker = () => {
+    if (smoothTicker.current) {
+      clearInterval(smoothTicker.current);
+      smoothTicker.current = null;
+    }
+  };
+  useEffect(() => stopTicker, []);
+  const ensureTicker = () => {
+    if (smoothTicker.current) return;
+    smoothTicker.current = setInterval(() => {
+      if (smoothTargets.current.size === 0) return stopTicker();
+      for (const [invId, target] of smoothTargets.current) {
+        if (target.pending.length > 0) {
+          const take = Math.max(2, Math.ceil(target.pending.length / 6));
+          const chunk = target.pending.slice(0, take);
+          target.pending = target.pending.slice(take);
+          setDrafts((prev) => ({ ...prev, [invId]: (prev[invId] ?? "") + chunk }));
+        } else if (target.final !== null) {
+          const { final, onSettled } = target;
+          smoothTargets.current.delete(invId);
+          setDrafts((prev) => ({ ...prev, [invId]: final }));
+          onSettled?.();
+        }
+      }
+    }, 28);
+  };
+  const smoothAppend = (invId: string, text: string) => {
+    const target = smoothTargets.current.get(invId) ?? { pending: "", final: null, onSettled: null };
+    target.pending += text;
+    smoothTargets.current.set(invId, target);
+    ensureTicker();
+  };
+  const smoothSettle = (invId: string, final: string, onSettled: () => void) => {
+    const target = smoothTargets.current.get(invId) ?? { pending: "", final: null, onSettled: null };
+    target.final = final;
+    target.onSettled = onSettled;
+    smoothTargets.current.set(invId, target);
+    ensureTicker();
+  };
+  const smoothCancelAll = () => {
+    smoothTargets.current.clear();
+    stopTicker();
+  };
+
   async function handleDraft() {
     setBusy(true);
     setError(null);
     setFailed(new Set());
     const leadIds = props.invitations.map((inv) => inv.lead.id);
-    const appendForLead = (leadId: string, text: string) => {
-      const invId = invitationByLead.get(leadId);
-      if (!invId) return;
-      setDrafts((prev) => ({ ...prev, [invId]: (prev[invId] ?? "") + text }));
-    };
-    const stopStreaming = (leadId: string) => {
-      const invId = invitationByLead.get(leadId);
-      if (!invId) return;
+    const stopStreaming = (invId: string) => {
       setStreaming((prev) => {
         const next = new Set(prev);
         next.delete(invId);
@@ -1079,20 +1127,24 @@ function SlotInvitations(props: {
       setDrafts(Object.fromEntries(props.invitations.map((inv) => [inv.id, ""])));
       setStreaming(new Set(props.invitations.map((inv) => inv.id)));
       await streamDrafts({ slotId: props.slotId, leadIds }, (event) => {
-        if (event.type === "delta") appendForLead(event.leadId, event.text);
+        const invId = event.type !== "complete" ? invitationByLead.get(event.leadId) : undefined;
+        if (!invId) return;
+        if (event.type === "delta") smoothAppend(invId, event.text);
         if (event.type === "done") {
-          const invId = invitationByLead.get(event.leadId);
-          if (invId) setDrafts((prev) => ({ ...prev, [invId]: event.message }));
-          stopStreaming(event.leadId);
+          // The caret keeps blinking until the drain catches up — the draft only
+          // becomes editable once every streamed character is on screen.
+          smoothSettle(invId, event.message, () => stopStreaming(invId));
         }
         if (event.type === "error") {
-          const invId = invitationByLead.get(event.leadId);
-          if (invId) setFailed((prev) => new Set(prev).add(invId));
+          smoothTargets.current.delete(invId);
+          setFailed((prev) => new Set(prev).add(invId));
           setError("One or more drafts need attention. Retry them individually or write the message manually.");
-          stopStreaming(event.leadId);
+          stopStreaming(invId);
         }
       });
     } catch {
+      smoothCancelAll();
+      setStreaming(new Set());
       try {
         const result = await draftMessages({ slotId: props.slotId, leadIds });
         const byLead = new Map(result.drafts.map((d: DraftedMessage) => [d.leadId, d.message]));
@@ -1104,7 +1156,6 @@ function SlotInvitations(props: {
         setDrafts({});
       }
     } finally {
-      setStreaming(new Set());
       setBusy(false);
     }
   }
