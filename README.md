@@ -13,6 +13,8 @@ built it — including what it got wrong and how that was caught.
 
 ## Quick start
 
+Requires Node 20.12+ (the zero-dependency `.env` loading uses Node's builtin).
+
 ```bash
 npm run setup     # installs workspaces + creates & seeds the SQLite database
 npm run dev       # API on :4100 and web on :5173 together
