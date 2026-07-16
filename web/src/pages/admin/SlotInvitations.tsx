@@ -11,7 +11,8 @@ export function SlotInvitations(props: {
   slotId: string;
   startsAt: string;
   title: string;
-  subtitle: string;
+  /** Optional annotation after the time/day line (e.g. "existing viewing"). */
+  subtitle?: string;
   invitations: ConfirmResponse["invitations"];
 }) {
   const [drafts, setDrafts] = useState<Record<string, string>>(
@@ -196,13 +197,25 @@ export function SlotInvitations(props: {
     (inv) => !sent[inv.id] && (drafts[inv.id]?.trim().length ?? 0) >= 10 && !streaming.has(inv.id)
   ).length;
 
+  // The time is the card's most-checked fact (which viewing am I sending invites
+  // for?) — it renders bold and dark, never buried in a grey caption. Seen live.
+  const starts = new Date(props.startsAt);
+  const timeLabel = starts
+    .toLocaleTimeString("en-IE", { hour: "numeric", minute: "2-digit", hourCycle: "h12" })
+    .replace(/[\s.]/g, "")
+    .toLowerCase();
+  const dayLabel = starts.toLocaleDateString("en-IE", { weekday: "long", day: "numeric", month: "long" });
+
   return (
     <Card>
       <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
         <DateBlock iso={props.startsAt} />
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold">{props.title}</h3>
-          <p className="mt-0.5 text-xs text-stone-500">{props.subtitle}</p>
+          <p className="mt-0.5 text-sm text-stone-600">
+            <span className="font-semibold text-stone-900">{timeLabel}</span> · {dayLabel}
+            {props.subtitle && <span className="text-stone-400"> · {props.subtitle}</span>}
+          </p>
         </div>
         {!hasDrafts && (
           <Button variant="primary" onClick={handleDraft} disabled={busy || props.invitations.length === 0} className="w-full px-3 py-1.5 text-xs sm:w-auto">

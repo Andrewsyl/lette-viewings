@@ -87,7 +87,6 @@ export function CreatedPanel(props: { created: ConfirmResponse; onReset: () => v
             slotId={slot.id}
             startsAt={slot.startsAt}
             title={slot.property.name}
-            subtitle={formatSlotTime(slot.startsAt)}
             invitations={created.invitations.filter((inv) => inv.slotId === slot.id)}
           />
         ))}
@@ -99,7 +98,7 @@ export function CreatedPanel(props: { created: ConfirmResponse; onReset: () => v
               slotId={slot.id}
               startsAt={slot.startsAt}
               title={slot.property.name}
-              subtitle={`${formatSlotTime(slot.startsAt)} · existing viewing`}
+              subtitle="existing viewing"
               invitations={newInvitations}
             />
           ))}
