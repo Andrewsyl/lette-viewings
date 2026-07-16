@@ -204,7 +204,7 @@ function LoadingSchedule() {
 function EmptySchedule() {
   return (
     <Card className="mt-8 overflow-hidden p-0 text-center">
-      <div className="bg-[radial-gradient(circle_at_top,#d0fce8,transparent_65%)] px-6 py-12">
+      <div className="px-6 py-12">
         <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-700 text-xl font-bold text-white shadow-card">+</span>
         <p className="mt-5 text-xs font-bold uppercase tracking-wider text-emerald-800">Your schedule starts with a sentence</p>
         <h2 className="mt-2 text-2xl font-bold tracking-tight">No upcoming viewings</h2>
