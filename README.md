@@ -95,9 +95,9 @@ The calls that shaped the admin experience — each deliberate:
    asks "Did you mean Priya Sharma?".)
 4. **Smart defaults from history.** Learn per-property duration/capacity norms and feed
    them into the prompt as defaults; needs usage data to be meaningful.
-5. **An eval harness.** `LlmCallLog` is already accumulating real inputs and outputs;
-   replaying them against prompt changes turns prompt edits from guesswork into a
-   regression suite. At real volume this is the first thing I'd build.
+5. **Evals from real traffic.** A hand-written eval set exists (`npm run eval` in
+   `server/`, see its README). The next step is feeding it from `LlmCallLog`: real
+   admin requests, labelled once, replayed against every prompt change.
 6. **Decline flow, lead management UI, pagination, rate limiting** — standard production
    furniture, wrong complexity for this stage.
 

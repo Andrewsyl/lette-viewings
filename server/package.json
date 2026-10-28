@@ -8,7 +8,8 @@
     "db:setup": "DATABASE_URL=\"${DATABASE_URL:-file:./dev.db}\" prisma db push && tsx prisma/seed.ts",
     "db:reset": "rm -f prisma/dev.db && npm run db:setup",
     "test": "DATABASE_URL=file:./test.db prisma db push --force-reset --skip-generate && DATABASE_URL=file:./test.db LLM_MODE=live ANTHROPIC_API_KEY= vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "eval": "DATABASE_URL=file:./eval.db prisma db push --skip-generate >/dev/null && DATABASE_URL=file:./eval.db tsx evals/run.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

@@ -45,6 +45,32 @@ Copy `.env.example` to `.env` for live LLM features. Everything else works with 
 Errors: Zod → 422 · LLM output invalid after one repair retry → 422 (friendly message) ·
 LLM unavailable → 502 · slot full → 409 with alternatives · unknown id → 404.
 
+## Evals
+
+`npm test` proves the code around the model holds when the model misbehaves. Evals
+measure the model itself: 25 real-sounding admin requests and 6 invitation drafts, run
+against the live model through the app's real entry points, each graded by plain code
+checks (right property, right day, asked instead of guessing, no leaked ids, 60–120
+words…).
+
+```bash
+npm run eval                          # every case once — uses ANTHROPIC_API_KEY, costs tokens
+npm run eval -- --reps 3              # 3 runs per case: the model varies, so one run is a guess
+npm run eval -- --suite parse         # or --suite draft
+npm run eval -- --case clash          # cases whose id contains "clash"
+LLM_MODE=mock npm run eval            # free: checks the harness against the demo client
+```
+
+It prints the pass rate per group with a 95% range, the most-failed checks, and what
+changed since the last run on the same model. Each run is saved under
+`evals/results/<time>_<model>/` (git-ignored): `results.jsonl` holds every trial with
+its checks and raw model output, `errors.jsonl` holds trials that never got an answer
+(provider down) so they don't count against the model. A pass is what the admin sees,
+after the code fences — the model's first answer is in each row's `calls`.
+
+Adding a case: one entry in `evals/cases.ts`. Change the case in the same commit as the
+prompt rule it encodes.
+
 ## Structure
 
 ```
@@ -56,6 +82,7 @@ src/lib/capacity.ts          Transactional accept + alternative suggestions
 src/routes/*                 Thin routers; errors go to the central handler
 prisma/schema.prisma         Data model incl. LlmCallLog (every model call audited)
 tests/                       Parser-vs-garbage, capacity race, HTTP contract
+evals/                       Live-model cases, code graders, runner (npm run eval)
 ```
 
 See `../DESIGN.md` for the reasoning behind all of this.
